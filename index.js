@@ -1,4 +1,4 @@
-console.log("🔥 VERSION 10 - STRICT MAPPING 🔥");
+console.log("🔥 VERSION 11 - REAL FIX 🔥");
 
 import express from "express";
 import ExcelJS from "exceljs";
@@ -15,6 +15,14 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "10mb" }));
 
+// 🔴 universal key resolver (handles snake_case + camelCase)
+const get = (obj, ...keys) => {
+  for (const k of keys) {
+    if (obj[k] !== undefined && obj[k] !== null) return obj[k];
+  }
+  return "";
+};
+
 app.post("/export", async (req, res) => {
   try {
     const { rows, processName, userName } = req.body;
@@ -23,7 +31,8 @@ app.post("/export", async (req, res) => {
       return res.status(400).send("Invalid rows");
     }
 
-    console.log("=== DATA SAMPLE ===");
+    // 🔴 THIS SHOWS TRUTH
+    console.log("=== REAL ROW ===");
     console.log(JSON.stringify(rows[0], null, 2));
 
     const workbook = new ExcelJS.Workbook();
@@ -36,32 +45,31 @@ app.post("/export", async (req, res) => {
     rows.forEach((r, i) => {
       const row = sheet.getRow(START_ROW + i);
 
-      // 🔴 EXACT COLUMN MAPPING (NO FALLBACKS)
+      // 🟩 STRICT COLUMN POSITIONS + FLEXIBLE KEYS
 
-      row.getCell(3).value = r.process_step || "";                 // C
-      row.getCell(4).value = r.task || "";                         // D
-      row.getCell(5).value = r.failure_mode || "";                 // E
-      row.getCell(6).value = r.failure_effect || "";               // F
-      row.getCell(7).value = r.severity ?? "";                     // G
-      row.getCell(8).value = r.failure_cause || "";                // H
-      row.getCell(9).value = r.occurrence ?? "";                   // I
-      row.getCell(10).value = r.current_controls || "";            // J
-      row.getCell(11).value = r.detection ?? "";                   // K
-      row.getCell(12).value = r.action_priority || "";             // L
-      row.getCell(13).value = r.recommended_action || "";          // M
-      row.getCell(14).value = r.responsibility || "";              // N
-      row.getCell(15).value = r.target_completion_date || "";      // O
-      row.getCell(16).value = r.action_status || "";               // P
-      row.getCell(17).value = r.completion_date || "";             // Q
+      row.getCell(3).value = get(r, "process_step", "processStep");                // C
+      row.getCell(4).value = get(r, "task", "function");                           // D
+      row.getCell(5).value = get(r, "failure_mode", "failureMode");                // E
+      row.getCell(6).value = get(r, "failure_effect", "failureEffect");            // F
+      row.getCell(7).value = get(r, "severity");                                   // G
+      row.getCell(8).value = get(r, "failure_cause", "failureCause");              // H
+      row.getCell(9).value = get(r, "occurrence");                                 // I
+      row.getCell(10).value = get(r, "current_controls", "currentControls");       // J
+      row.getCell(11).value = get(r, "detection");                                 // K
+      row.getCell(12).value = get(r, "action_priority", "actionPriority");         // L
 
-      row.getCell(18).value = r.severity_override ?? "";           // R
-      row.getCell(19).value = r.occurrence_override ?? "";         // S
-      row.getCell(20).value = r.detection_override ?? "";          // T
-      row.getCell(21).value = r.action_priority_override ?? "";    // U
+      row.getCell(13).value = get(r, "recommended_action", "recommendedAction");   // M
+      row.getCell(14).value = get(r, "responsibility");                            // N
+      row.getCell(15).value = get(r, "target_completion_date", "targetDate");      // O
+      row.getCell(16).value = get(r, "action_status", "actionStatus");             // P
+      row.getCell(17).value = get(r, "completion_date", "completionDate");         // Q
 
-      // V (22) and W (23) intentionally untouched
+      row.getCell(18).value = get(r, "severity_override");                         // R
+      row.getCell(19).value = get(r, "occurrence_override");                       // S
+      row.getCell(20).value = get(r, "detection_override");                        // T
+      row.getCell(21).value = get(r, "action_priority_override");                  // U
 
-      row.getCell(24).value = r.moderation_notes || "";            // X
+      row.getCell(24).value = get(r, "moderation_notes", "notes");                 // X
 
       row.commit();
     });
@@ -93,7 +101,7 @@ app.post("/export", async (req, res) => {
   }
 });
 
-// Railway port (do not change)
+// Railway port
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
