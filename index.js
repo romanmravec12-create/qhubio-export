@@ -1,4 +1,4 @@
-console.log("🔥 VERSION 17 - EXCEL FORMULA INJECTION 🔥");
+console.log("🔥 VERSION 18 - STABLE VLOOKUP FIX 🔥");
 
 import express from "express";
 import ExcelJS from "exceljs";
@@ -21,7 +21,7 @@ app.post("/export", async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile("template.xlsx");
 
-    // optional but safe
+    // force recalculation (still useful)
     workbook.calcProperties.fullCalcOnLoad = true;
 
     const sheet = workbook.worksheets[0];
@@ -55,9 +55,9 @@ app.post("/export", async (req, res) => {
 
       row.getCell(11).value = r.detection != null ? Number(r.detection) : null;
 
-      // 🔴 EXCEL FORMULA FOR AP (COLUMN L)
+      // 🔴 SAFE FORMULA (NO ARRAYS)
       row.getCell(12).value = {
-        formula: `INDEX('AP Table'!E4:E1003;MATCH(1;('AP Table'!B4:B1003=G${rowIndex})*('AP Table'!C4:C1003=I${rowIndex})*('AP Table'!D4:D1003=K${rowIndex});0))`
+        formula: `VLOOKUP(G${rowIndex}&"-"&I${rowIndex}&"-"&K${rowIndex},'AP Table'!A:E,5,FALSE)`
       };
 
       row.getCell(15).value = r.recommended_action || "";
@@ -70,9 +70,9 @@ app.post("/export", async (req, res) => {
       row.getCell(21).value = r.occurrence_override != null ? Number(r.occurrence_override) : null;
       row.getCell(22).value = r.detection_override != null ? Number(r.detection_override) : null;
 
-      // 🔴 EXCEL FORMULA FOR RESIDUAL AP (COLUMN W)
+      // 🔴 SAFE RESIDUAL FORMULA
       row.getCell(23).value = {
-        formula: `INDEX('AP Table'!E4:E1003;MATCH(1;('AP Table'!B4:B1003=T${rowIndex})*('AP Table'!C4:C1003=U${rowIndex})*('AP Table'!D4:D1003=V${rowIndex});0))`
+        formula: `VLOOKUP(T${rowIndex}&"-"&U${rowIndex}&"-"&V${rowIndex},'AP Table'!A:E,5,FALSE)`
       };
 
       row.getCell(24).value = r.moderation_notes || "";
