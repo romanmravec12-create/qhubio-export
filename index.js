@@ -1,4 +1,4 @@
-console.log("🔥 VERSION 22 - FINAL WORKING LOOKUP 🔥");
+console.log("🔥 VERSION 23 - FINAL (LOCALE FIX) 🔥");
 
 import express from "express";
 import ExcelJS from "exceljs";
@@ -32,14 +32,13 @@ app.post("/export", async (req, res) => {
       const rowIndex = START_ROW + i;
       const row = sheet.getRow(rowIndex);
 
-      // 🟩 COPY STYLE
+      // copy styles
       templateRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
         const targetCell = row.getCell(colNumber);
         targetCell.style = JSON.parse(JSON.stringify(cell.style));
       });
 
-      // 🟩 DATA
-
+      // data
       row.getCell(3).value = r.process_step || "";
       row.getCell(4).value = r.function || "";
       row.getCell(5).value = r.failure_mode || "";
@@ -54,9 +53,9 @@ app.post("/export", async (req, res) => {
 
       row.getCell(11).value = r.detection != null ? Number(r.detection) : null;
 
-      // 🔴 FINAL FIX: NUMERIC KEY (MATCHES YOUR AP TABLE)
+      // 🔴 FIXED FORMULA (COMMAs + VALUE)
       row.getCell(12).value = {
-        formula: `VLOOKUP(VALUE(G${rowIndex}&I${rowIndex}&K${rowIndex}),'AP Table'!A:E,5,FALSE)`
+        formula: `VLOOKUP(VALUE(G${rowIndex}&I${rowIndex}&K${rowIndex}), 'AP Table'!A:E, 5, FALSE)`
       };
 
       row.getCell(15).value = r.recommended_action || "";
@@ -69,9 +68,8 @@ app.post("/export", async (req, res) => {
       row.getCell(21).value = r.occurrence_override != null ? Number(r.occurrence_override) : null;
       row.getCell(22).value = r.detection_override != null ? Number(r.detection_override) : null;
 
-      // 🔴 FINAL FIX: RESIDUAL KEY
       row.getCell(23).value = {
-        formula: `VLOOKUP(VALUE(T${rowIndex}&U${rowIndex}&V${rowIndex}),'AP Table'!A:E,5,FALSE)`
+        formula: `VLOOKUP(VALUE(T${rowIndex}&U${rowIndex}&V${rowIndex}), 'AP Table'!A:E, 5, FALSE)`
       };
 
       row.getCell(24).value = r.moderation_notes || "";
