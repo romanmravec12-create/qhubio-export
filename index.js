@@ -2,11 +2,24 @@ import express from "express";
 import ExcelJS from "exceljs";
 
 const app = express();
+
+// allow requests from browser (important)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.sendStatus(200);
+  next();
+});
+
 app.use(express.json({ limit: "10mb" }));
 
 app.post("/export", async (req, res) => {
   try {
     const { rows, processName, userName } = req.body;
+
+    if (!rows || !Array.isArray(rows)) {
+      return res.status(400).send("Invalid rows");
+    }
 
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile("template.xlsx");
@@ -50,11 +63,21 @@ app.post("/export", async (req, res) => {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
 
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="P-FMEA_${processName || "Export"}_${userName || "User"}.xlsx"`
+    );
+
     res.send(buffer);
   } catch (e) {
-    console.error(e);
-    res.status(500).send(e.message);
+    console.error("EXPORT ERROR:", e);
+    res.status(500).send(e.message || "Export failed");
   }
 });
 
-app.listen(3000, () => console.log("Running on 3000"));
+// 🔴 THIS IS THE ONLY CORRECT PORT LOGIC
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
