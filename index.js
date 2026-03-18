@@ -1,4 +1,4 @@
-console.log("🔥 VERSION 19 - FINAL KEY FIX 🔥");
+console.log("🔥 VERSION 21 - FINAL EXCEL-COMPATIBLE 🔥");
 
 import express from "express";
 import ExcelJS from "exceljs";
@@ -21,7 +21,6 @@ app.post("/export", async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile("template.xlsx");
 
-    // still useful
     workbook.calcProperties.fullCalcOnLoad = true;
 
     const sheet = workbook.worksheets[0];
@@ -33,20 +32,18 @@ app.post("/export", async (req, res) => {
       const rowIndex = START_ROW + i;
       const row = sheet.getRow(rowIndex);
 
-      // 🟩 COPY STYLE
+      // copy styles
       templateRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
         const targetCell = row.getCell(colNumber);
         targetCell.style = JSON.parse(JSON.stringify(cell.style));
       });
 
-      // 🟩 DATA
-
+      // data
       row.getCell(3).value = r.process_step || "";
       row.getCell(4).value = r.function || "";
       row.getCell(5).value = r.failure_mode || "";
       row.getCell(6).value = r.effect || "";
 
-      // numbers must stay numbers
       row.getCell(7).value = r.severity != null ? Number(r.severity) : null;
       row.getCell(8).value = r.cause || "";
       row.getCell(9).value = r.occurrence != null ? Number(r.occurrence) : null;
@@ -56,9 +53,9 @@ app.post("/export", async (req, res) => {
 
       row.getCell(11).value = r.detection != null ? Number(r.detection) : null;
 
-      // 🔴 CORRECT KEY (NO DASHES)
+      // 🔴 FINAL WORKING FORMULA (TEXT-BASED KEY)
       row.getCell(12).value = {
-        formula: `VLOOKUP(G${rowIndex}&I${rowIndex}&K${rowIndex},'AP Table'!A:E,5,FALSE)`
+        formula: `VLOOKUP(TEXT(G${rowIndex},"0")&TEXT(I${rowIndex},"0")&TEXT(K${rowIndex},"0"),'AP Table'!A:E,5,FALSE)`
       };
 
       row.getCell(15).value = r.recommended_action || "";
@@ -71,9 +68,8 @@ app.post("/export", async (req, res) => {
       row.getCell(21).value = r.occurrence_override != null ? Number(r.occurrence_override) : null;
       row.getCell(22).value = r.detection_override != null ? Number(r.detection_override) : null;
 
-      // 🔴 CORRECT RESIDUAL KEY
       row.getCell(23).value = {
-        formula: `VLOOKUP(T${rowIndex}&U${rowIndex}&V${rowIndex},'AP Table'!A:E,5,FALSE)`
+        formula: `VLOOKUP(TEXT(T${rowIndex},"0")&TEXT(U${rowIndex},"0")&TEXT(V${rowIndex},"0"),'AP Table'!A:E,5,FALSE)`
       };
 
       row.getCell(24).value = r.moderation_notes || "";
