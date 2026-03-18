@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 
 const app = express();
 
-// CORS (required for browser calls)
+// CORS
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Content-Type");
@@ -12,14 +12,6 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: "10mb" }));
-
-// helper: safe getter with fallbacks
-const get = (obj, keys, fallback = "") => {
-  for (const k of keys) {
-    if (obj[k] !== undefined && obj[k] !== null) return obj[k];
-  }
-  return fallback;
-};
 
 app.post("/export", async (req, res) => {
   try {
@@ -34,48 +26,44 @@ app.post("/export", async (req, res) => {
 
     const sheet = workbook.worksheets[0];
 
-    const TEMPLATE_ROW_INDEX = 16;
+    const START_ROW = 16;
 
     rows.forEach((r, i) => {
-      const targetRowIndex = TEMPLATE_ROW_INDEX + i;
+      const rowIndex = START_ROW + i;
+      const row = sheet.getRow(rowIndex);
 
-      // 🔴 CLONE TEMPLATE ROW (preserves styles, merges, formatting)
-      const templateRow = sheet.getRow(TEMPLATE_ROW_INDEX);
-      const newRow = sheet.getRow(targetRowIndex);
+      // 🔴 WRITE VALUES ONLY — DO NOT TOUCH STYLES
 
-      newRow.model = JSON.parse(JSON.stringify(templateRow.model));
+      // C → R (main table)
+      row.getCell(3).value = r.process_step || "";
+      row.getCell(4).value = r.task || "";
+      row.getCell(5).value = r.failure_mode || "";
+      row.getCell(6).value = r.failure_effect || "";
+      row.getCell(7).value = r.severity ?? "";
+      row.getCell(8).value = r.failure_cause || "";
+      row.getCell(9).value = r.occurrence ?? "";
+      row.getCell(10).value = r.current_controls || "";
+      row.getCell(11).value = r.detection ?? "";
+      row.getCell(12).value = r.action_priority || "";
+      row.getCell(13).value = r.recommended_action || "";
+      row.getCell(14).value = r.responsibility || "";
+      row.getCell(15).value = r.target_completion_date || "";
+      row.getCell(16).value = r.failure_status || "";
+      row.getCell(17).value = r.action_status || "";
+      row.getCell(18).value = r.completion_date || "";
 
-      // 🟩 FLEXIBLE FIELD MAPPING (handles naming differences)
-      newRow.getCell(3).value = get(r, ["process_step", "processStep"]);
-      newRow.getCell(4).value = get(r, ["task", "function"]);
-      newRow.getCell(5).value = get(r, ["failure_mode", "failureMode"]);
-      newRow.getCell(6).value = get(r, ["failure_effect", "effect"]);
-      newRow.getCell(7).value = get(r, ["severity"]);
-      newRow.getCell(8).value = get(r, ["failure_cause", "cause"]);
-      newRow.getCell(9).value = get(r, ["occurrence"]);
-      newRow.getCell(10).value = get(r, ["current_controls"]);
-      newRow.getCell(11).value = get(r, ["detection"]);
-      newRow.getCell(12).value = get(r, ["action_priority"]);
+      // S → V (residual)
+      row.getCell(19).value = r.severity_override ?? "";
+      row.getCell(20).value = r.occurrence_override ?? "";
+      row.getCell(21).value = r.detection_override ?? "";
+      row.getCell(22).value = r.action_priority_override ?? "";
 
-      newRow.getCell(13).value = get(r, ["recommended_action"]);
-      newRow.getCell(14).value = get(r, ["responsibility"]);
-      newRow.getCell(15).value = get(r, ["target_completion_date", "targetDate"]);
-
-      newRow.getCell(16).value = get(r, ["failure_status"]);
-      newRow.getCell(17).value = get(r, ["action_status"]);
-      newRow.getCell(18).value = get(r, ["completion_date"]);
-
-      // residual
-      newRow.getCell(19).value = get(r, ["severity_override"]);
-      newRow.getCell(20).value = get(r, ["occurrence_override"]);
-      newRow.getCell(21).value = get(r, ["detection_override"]);
-      newRow.getCell(22).value = get(r, ["action_priority_override"]);
-
-      if (r.moderation_notes) {
-        newRow.getCell(24).value = r.moderation_notes;
+      // X (notes only if exists)
+      if (r.moderation_notes && r.moderation_notes.trim() !== "") {
+        row.getCell(24).value = r.moderation_notes;
       }
 
-      newRow.commit();
+      row.commit();
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -105,7 +93,7 @@ app.post("/export", async (req, res) => {
   }
 });
 
-// Railway port handling (DO NOT CHANGE)
+// Railway port
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
