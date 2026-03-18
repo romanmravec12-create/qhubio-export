@@ -1,4 +1,4 @@
-console.log("🔥 VERSION 18 - STABLE VLOOKUP FIX 🔥");
+console.log("🔥 VERSION 19 - FINAL KEY FIX 🔥");
 
 import express from "express";
 import ExcelJS from "exceljs";
@@ -21,7 +21,7 @@ app.post("/export", async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile("template.xlsx");
 
-    // force recalculation (still useful)
+    // still useful
     workbook.calcProperties.fullCalcOnLoad = true;
 
     const sheet = workbook.worksheets[0];
@@ -46,6 +46,7 @@ app.post("/export", async (req, res) => {
       row.getCell(5).value = r.failure_mode || "";
       row.getCell(6).value = r.effect || "";
 
+      // numbers must stay numbers
       row.getCell(7).value = r.severity != null ? Number(r.severity) : null;
       row.getCell(8).value = r.cause || "";
       row.getCell(9).value = r.occurrence != null ? Number(r.occurrence) : null;
@@ -55,9 +56,9 @@ app.post("/export", async (req, res) => {
 
       row.getCell(11).value = r.detection != null ? Number(r.detection) : null;
 
-      // 🔴 SAFE FORMULA (NO ARRAYS)
+      // 🔴 CORRECT KEY (NO DASHES)
       row.getCell(12).value = {
-        formula: `VLOOKUP(G${rowIndex}&"-"&I${rowIndex}&"-"&K${rowIndex},'AP Table'!A:E,5,FALSE)`
+        formula: `VLOOKUP(G${rowIndex}&I${rowIndex}&K${rowIndex},'AP Table'!A:E,5,FALSE)`
       };
 
       row.getCell(15).value = r.recommended_action || "";
@@ -70,9 +71,9 @@ app.post("/export", async (req, res) => {
       row.getCell(21).value = r.occurrence_override != null ? Number(r.occurrence_override) : null;
       row.getCell(22).value = r.detection_override != null ? Number(r.detection_override) : null;
 
-      // 🔴 SAFE RESIDUAL FORMULA
+      // 🔴 CORRECT RESIDUAL KEY
       row.getCell(23).value = {
-        formula: `VLOOKUP(T${rowIndex}&"-"&U${rowIndex}&"-"&V${rowIndex},'AP Table'!A:E,5,FALSE)`
+        formula: `VLOOKUP(T${rowIndex}&U${rowIndex}&V${rowIndex},'AP Table'!A:E,5,FALSE)`
       };
 
       row.getCell(24).value = r.moderation_notes || "";
