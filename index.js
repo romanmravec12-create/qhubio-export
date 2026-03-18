@@ -1,4 +1,4 @@
-console.log("🔥 VERSION 24 - FINAL INDEX MATCH 🔥");
+console.log("🔥 VERSION 25 - FINAL (HYBRID SAFE) 🔥");
 
 import express from "express";
 import ExcelJS from "exceljs";
@@ -21,8 +21,6 @@ app.post("/export", async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile("template.xlsx");
 
-    workbook.calcProperties.fullCalcOnLoad = true;
-
     const sheet = workbook.worksheets[0];
 
     const START_ROW = 16;
@@ -32,7 +30,7 @@ app.post("/export", async (req, res) => {
       const rowIndex = START_ROW + i;
       const row = sheet.getRow(rowIndex);
 
-      // styles
+      // copy styles
       templateRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
         row.getCell(colNumber).style = JSON.parse(JSON.stringify(cell.style));
       });
@@ -52,10 +50,8 @@ app.post("/export", async (req, res) => {
 
       row.getCell(11).value = r.detection != null ? Number(r.detection) : null;
 
-      // 🔴 FINAL FORMULA (INDEX MATCH, NO ARRAYS)
-      row.getCell(12).value = {
-        formula: `INDEX('AP Table'!E4:E1003, MATCH(VALUE(G${rowIndex}&I${rowIndex}&K${rowIndex}), 'AP Table'!A4:A1003, 0))`
-      };
+      // 🔴 WRITE FINAL VALUES (NOT FORMULA)
+      row.getCell(12).value = r.action_priority || "";
 
       row.getCell(15).value = r.recommended_action || "";
       row.getCell(16).value = r.responsibility || r.assigned_to || "";
@@ -67,9 +63,7 @@ app.post("/export", async (req, res) => {
       row.getCell(21).value = r.occurrence_override != null ? Number(r.occurrence_override) : null;
       row.getCell(22).value = r.detection_override != null ? Number(r.detection_override) : null;
 
-      row.getCell(23).value = {
-        formula: `INDEX('AP Table'!E4:E1003, MATCH(VALUE(T${rowIndex}&U${rowIndex}&V${rowIndex}), 'AP Table'!A4:A1003, 0))`
-      };
+      row.getCell(23).value = r.action_priority_override || "";
 
       row.getCell(24).value = r.moderation_notes || "";
 
