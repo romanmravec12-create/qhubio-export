@@ -1,4 +1,4 @@
-console.log("🔥 VERSION 13 - FINAL ALIGNMENT FIX 🔥");
+console.log("🔥 VERSION 14 - FORMULA + STYLE FIX 🔥");
 
 import express from "express";
 import ExcelJS from "exceljs";
@@ -25,38 +25,52 @@ app.post("/export", async (req, res) => {
 
     const START_ROW = 16;
 
-    rows.forEach((r, i) => {
-      const row = sheet.getRow(START_ROW + i);
+    // 🔴 template row (STYLE SOURCE)
+    const templateRow = sheet.getRow(START_ROW);
 
-      // LEFT SIDE (already correct)
-      row.getCell(3).value = r.process_step || "";   // C
-      row.getCell(4).value = r.function || "";       // D
-      row.getCell(5).value = r.failure_mode || "";   // E
-      row.getCell(6).value = r.effect || "";         // F
-      row.getCell(7).value = r.severity ?? "";       // G
-      row.getCell(8).value = r.cause || "";          // H
-      row.getCell(9).value = r.occurrence ?? "";     // I
+    rows.forEach((r, i) => {
+      const rowIndex = START_ROW + i;
+      const row = sheet.getRow(rowIndex);
+
+      // 🟩 COPY STYLE FROM ROW 16
+      templateRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        const targetCell = row.getCell(colNumber);
+
+        targetCell.style = JSON.parse(JSON.stringify(cell.style));
+      });
+
+      // 🟩 DATA MAPPING
+
+      row.getCell(3).value = r.process_step || "";
+      row.getCell(4).value = r.function || "";
+      row.getCell(5).value = r.failure_mode || "";
+      row.getCell(6).value = r.effect || "";
+      row.getCell(7).value = r.severity ?? "";
+      row.getCell(8).value = r.cause || "";
+      row.getCell(9).value = r.occurrence ?? "";
 
       row.getCell(10).value =
-        `${r.current_prevention_controls || ""}\n${r.current_detection_controls || ""}`.trim(); // J
+        `${r.current_prevention_controls || ""}\n${r.current_detection_controls || ""}`.trim();
 
-      row.getCell(11).value = r.detection ?? "";     // K
-      row.getCell(12).value = r.action_priority || ""; // L
+      row.getCell(11).value = r.detection ?? "";
 
-      // 🔴 FIXED RIGHT SIDE (shifted to correct columns)
+      // 🔴 SKIP COLUMN 12 (L) → formula
+      // row.getCell(12) ❌ DO NOTHING
 
-      row.getCell(15).value = r.recommended_action || "";           // O
-      row.getCell(16).value = r.responsibility || r.assigned_to || ""; // P
-      row.getCell(17).value = r.target_completion_date || r.action_due_date || ""; // Q
-      row.getCell(18).value = r.action_status || "";                // R
-      row.getCell(19).value = r.completion_date || "";              // S
+      row.getCell(15).value = r.recommended_action || "";
+      row.getCell(16).value = r.responsibility || r.assigned_to || "";
+      row.getCell(17).value = r.target_completion_date || r.action_due_date || "";
+      row.getCell(18).value = r.action_status || "";
+      row.getCell(19).value = r.completion_date || "";
 
-      row.getCell(20).value = r.severity_override ?? "";            // T
-      row.getCell(21).value = r.occurrence_override ?? "";          // U
-      row.getCell(22).value = r.detection_override ?? "";           // V
-      row.getCell(23).value = r.action_priority_override ?? "";     // W
+      row.getCell(20).value = r.severity_override ?? "";
+      row.getCell(21).value = r.occurrence_override ?? "";
+      row.getCell(22).value = r.detection_override ?? "";
 
-      row.getCell(24).value = r.moderation_notes || "";             // X
+      // 🔴 SKIP COLUMN 23 (W) → formula
+      // row.getCell(23) ❌ DO NOTHING
+
+      row.getCell(24).value = r.moderation_notes || "";
 
       row.commit();
     });
