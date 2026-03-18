@@ -1,4 +1,4 @@
-console.log("🔥 VERSION 14 - FORMULA + STYLE FIX 🔥");
+console.log("🔥 VERSION 15 - RECALC FIX 🔥");
 
 import express from "express";
 import ExcelJS from "exceljs";
@@ -21,21 +21,23 @@ app.post("/export", async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile("template.xlsx");
 
+    // 🔴 CRITICAL FIX: force Excel to recalculate formulas on open
+    workbook.calcProperties.fullCalcOnLoad = true;
+
     const sheet = workbook.worksheets[0];
 
     const START_ROW = 16;
 
-    // 🔴 template row (STYLE SOURCE)
+    // template row for styles
     const templateRow = sheet.getRow(START_ROW);
 
     rows.forEach((r, i) => {
       const rowIndex = START_ROW + i;
       const row = sheet.getRow(rowIndex);
 
-      // 🟩 COPY STYLE FROM ROW 16
+      // 🟩 COPY STYLE FROM TEMPLATE ROW
       templateRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
         const targetCell = row.getCell(colNumber);
-
         targetCell.style = JSON.parse(JSON.stringify(cell.style));
       });
 
@@ -54,8 +56,7 @@ app.post("/export", async (req, res) => {
 
       row.getCell(11).value = r.detection ?? "";
 
-      // 🔴 SKIP COLUMN 12 (L) → formula
-      // row.getCell(12) ❌ DO NOTHING
+      // 🔴 DO NOT TOUCH COLUMN 12 (L) → formula stays
 
       row.getCell(15).value = r.recommended_action || "";
       row.getCell(16).value = r.responsibility || r.assigned_to || "";
@@ -67,8 +68,7 @@ app.post("/export", async (req, res) => {
       row.getCell(21).value = r.occurrence_override ?? "";
       row.getCell(22).value = r.detection_override ?? "";
 
-      // 🔴 SKIP COLUMN 23 (W) → formula
-      // row.getCell(23) ❌ DO NOTHING
+      // 🔴 DO NOT TOUCH COLUMN 23 (W) → formula stays
 
       row.getCell(24).value = r.moderation_notes || "";
 
