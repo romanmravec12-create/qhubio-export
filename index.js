@@ -1,4 +1,4 @@
-console.log("🔥 VERSION 23 - FINAL (LOCALE FIX) 🔥");
+console.log("🔥 VERSION 24 - FINAL INDEX MATCH 🔥");
 
 import express from "express";
 import ExcelJS from "exceljs";
@@ -32,10 +32,9 @@ app.post("/export", async (req, res) => {
       const rowIndex = START_ROW + i;
       const row = sheet.getRow(rowIndex);
 
-      // copy styles
+      // styles
       templateRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-        const targetCell = row.getCell(colNumber);
-        targetCell.style = JSON.parse(JSON.stringify(cell.style));
+        row.getCell(colNumber).style = JSON.parse(JSON.stringify(cell.style));
       });
 
       // data
@@ -53,9 +52,9 @@ app.post("/export", async (req, res) => {
 
       row.getCell(11).value = r.detection != null ? Number(r.detection) : null;
 
-      // 🔴 FIXED FORMULA (COMMAs + VALUE)
+      // 🔴 FINAL FORMULA (INDEX MATCH, NO ARRAYS)
       row.getCell(12).value = {
-        formula: `VLOOKUP(VALUE(G${rowIndex}&I${rowIndex}&K${rowIndex}), 'AP Table'!A:E, 5, FALSE)`
+        formula: `INDEX('AP Table'!E4:E1003, MATCH(VALUE(G${rowIndex}&I${rowIndex}&K${rowIndex}), 'AP Table'!A4:A1003, 0))`
       };
 
       row.getCell(15).value = r.recommended_action || "";
@@ -69,7 +68,7 @@ app.post("/export", async (req, res) => {
       row.getCell(22).value = r.detection_override != null ? Number(r.detection_override) : null;
 
       row.getCell(23).value = {
-        formula: `VLOOKUP(VALUE(T${rowIndex}&U${rowIndex}&V${rowIndex}), 'AP Table'!A:E, 5, FALSE)`
+        formula: `INDEX('AP Table'!E4:E1003, MATCH(VALUE(T${rowIndex}&U${rowIndex}&V${rowIndex}), 'AP Table'!A4:A1003, 0))`
       };
 
       row.getCell(24).value = r.moderation_notes || "";
