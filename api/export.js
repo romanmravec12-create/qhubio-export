@@ -3,7 +3,6 @@ import path from "path";
 import fs from "fs";
 
 export default async function handler(req, res) {
-  // ✅ CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -31,7 +30,6 @@ export default async function handler(req, res) {
 
     const templatePath = path.join(process.cwd(), "templates", templateFile);
 
-    // ✅ SAFETY CHECK
     if (!fs.existsSync(templatePath)) {
       console.error("❌ Template not found:", templatePath);
       return res.status(500).json({ error: "Template missing on server" });
@@ -57,7 +55,6 @@ export default async function handler(req, res) {
       const rowIndex = START_ROW + i;
       const row = sheet.getRow(rowIndex);
 
-      // ✅ Copy style + CENTER alignment
       templateRow.eachCell({ includeEmpty: true }, (cell, col) => {
         const target = row.getCell(col);
 
@@ -89,12 +86,11 @@ export default async function handler(req, res) {
 
       // ===== AP (COLUMN L) =====
       if (useEditableAp) {
-        // 🔥 FORCE formula (DO NOT inject value)
         const formula =
-          "IFERROR(INDEX('AP Table'!$E$3:$E$1002, MATCH(1, " +
-          "('AP Table'!$B$3:$B$1002=G" + rowIndex + ")*" +
-          "('AP Table'!$C$3:$C$1002=I" + rowIndex + ")*" +
-          "('AP Table'!$D$3:$D$1002=K" + rowIndex + "), 0)), \"\")";
+          "INDEX('AP Table'!E3:E1002; MATCH(1; " +
+          "('AP Table'!B3:B1002=FMEA!G" + rowIndex + ")*" +
+          "('AP Table'!C3:C1002=FMEA!I" + rowIndex + ")*" +
+          "('AP Table'!D3:D1002=FMEA!K" + rowIndex + "); 0))";
 
         row.getCell(12).value = { formula };
       } else {
@@ -118,7 +114,7 @@ export default async function handler(req, res) {
       c2.value = d2;
       c2.numFmt = "dd.mm.yyyy";
 
-      // ===== RESIDUAL S / O / D (T U V) =====
+      // ===== RESIDUAL S O D =====
       row.getCell(20).value =
         r.severity_override != null ? Number(r.severity_override) : null;
 
@@ -128,14 +124,13 @@ export default async function handler(req, res) {
       row.getCell(22).value =
         r.detection_override != null ? Number(r.detection_override) : null;
 
-      // ===== RESIDUAL AP (W) =====
+      // ===== RESIDUAL AP (COLUMN W) =====
       if (useEditableAp) {
-        // 🔥 FORCE formula for residual AP
         const residualFormula =
-          "IFERROR(INDEX('AP Table'!$E$3:$E$1002, MATCH(1, " +
-          "('AP Table'!$B$3:$B$1002=T" + rowIndex + ")*" +
-          "('AP Table'!$C$3:$C$1002=U" + rowIndex + ")*" +
-          "('AP Table'!$D$3:$D$1002=V" + rowIndex + "), 0)), \"\")";
+          "INDEX('AP Table'!E3:E1002; MATCH(1; " +
+          "('AP Table'!B3:B1002=FMEA!T" + rowIndex + ")*" +
+          "('AP Table'!C3:C1002=FMEA!U" + rowIndex + ")*" +
+          "('AP Table'!D3:D1002=FMEA!V" + rowIndex + "); 0))";
 
         row.getCell(23).value = { formula: residualFormula };
       } else {
