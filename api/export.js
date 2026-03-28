@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import path from "path";
+import fs from "fs";
 
 export default async function handler(req, res) {
   // ✅ CORS (CRITICAL FOR VERCEL)
@@ -7,12 +8,10 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  // ✅ Handle preflight request
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  // ❌ Block other methods
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -30,11 +29,19 @@ export default async function handler(req, res) {
       ? "template-editable-ap.xlsx"
       : "template.xlsx";
 
-    // ✅ Vercel-safe path
     const templatePath = path.join(process.cwd(), "templates", templateFile);
 
+    // ✅ SAFETY CHECK (prevents silent failure)
+    if (!fs.existsSync(templatePath)) {
+      console.error("❌ Template not found:", templatePath);
+      return res.status(500).json({ error: "Template missing on server" });
+    }
+
+    // 🔥 VERCEL-SAFE LOAD
+    const fileBuffer = fs.readFileSync(templatePath);
+
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(templatePath);
+    await workbook.xlsx.load(fileBuffer);
 
     const sheet = workbook.worksheets[0];
 
@@ -81,7 +88,7 @@ export default async function handler(req, res) {
 
       row.getCell(11).value = r.detection != null ? Number(r.detection) : null;
 
-      // ===== AP (STATIC HERE — OK FOR YOUR CURRENT SETUP) =====
+      // ===== AP =====
       row.getCell(12).value = r.action_priority || "";
 
       row.getCell(15).value = r.recommended_action || "";
@@ -117,7 +124,7 @@ export default async function handler(req, res) {
 
     res.setHeader(
       "Content-Disposition",
-      "attachment; filename=\"" + filename + "\""
+      `attachment; filename="${filename}"`
     );
 
     return res.status(200).send(buffer);
