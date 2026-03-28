@@ -1,4 +1,4 @@
-console.log("🔥 VERSION 29 - CENTER ALIGNMENT ADDED 🔥");
+console.log("🔥 VERSION 30 - FINAL FIX (FORMULA + CENTER) 🔥");
 
 import express from "express";
 import ExcelJS from "exceljs";
@@ -31,26 +31,24 @@ function quoteSheetName(sheetName) {
 return `'${String(sheetName).replace(/'/g, "''")}'`;
 }
 
-// ✅ Safe AP formula
+// ✅ FIXED PROPERLY (no syntax break)
 function buildApFormula({ sheetName, rowNumber, sCol, oCol, dCol }) {
 const fmeaSheet = quoteSheetName(sheetName);
 
-return (
-"IFERROR(INDEX('AP Table'!$E$3:$E$1002, MATCH(1, " +
-"('AP Table'!$B$3:$B$1002=" + fmeaSheet + "!" + sCol + rowNumber + ")*" +
-"('AP Table'!$C$3:$C$1002=" + fmeaSheet + "!" + oCol + rowNumber + ")*" +
-"('AP Table'!$D$3:$D$1002=" + fmeaSheet + "!" + dCol + rowNumber + "), 0)), "")"
-);
+return `IFERROR(
+    INDEX('AP Table'!$E$3:$E$1002,
+      MATCH(1,
+        ('AP Table'!$B$3:$B$1002=${fmeaSheet}!${sCol}${rowNumber})*
+        ('AP Table'!$C$3:$C$1002=${fmeaSheet}!${oCol}${rowNumber})*
+        ('AP Table'!$D$3:$D$1002=${fmeaSheet}!${dCol}${rowNumber}),       0)
+    ),
+  "")`;
 }
 
 function copyTemplateRowStyle(templateRow, targetRow) {
 templateRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
 targetRow.getCell(colNumber).style = JSON.parse(JSON.stringify(cell.style));
 if (cell.numFmt) targetRow.getCell(colNumber).numFmt = cell.numFmt;
-if (cell.alignment) targetRow.getCell(colNumber).alignment = JSON.parse(JSON.stringify(cell.alignment));
-if (cell.font) targetRow.getCell(colNumber).font = JSON.parse(JSON.stringify(cell.font));
-if (cell.fill) targetRow.getCell(colNumber).fill = JSON.parse(JSON.stringify(cell.fill));
-if (cell.border) targetRow.getCell(colNumber).border = JSON.parse(JSON.stringify(cell.border));
 });
 
 if (templateRow.height) {
@@ -65,14 +63,13 @@ result: result ?? "",
 };
 }
 
-// ✅ Excel date handling
 function toExcelDate(value) {
 if (!value) return null;
 const d = new Date(value);
 return isNaN(d) ? null : d;
 }
 
-// ✅ NEW: Center all cells
+// ✅ CENTER ALIGNMENT
 function centerRowCells(row) {
 row.eachCell({ includeEmpty: true }, (cell) => {
 cell.alignment = {
@@ -123,7 +120,6 @@ rows.forEach((r, i) => {
 
   copyTemplateRowStyle(templateRow, row);
 
-  // ===== DATA =====
   row.getCell(3).value = r.process_step || "";
   row.getCell(4).value = r.function || "";
   row.getCell(5).value = r.failure_mode || "";
@@ -140,7 +136,6 @@ rows.forEach((r, i) => {
 
   row.getCell(11).value = r.detection != null ? Number(r.detection) : null;
 
-  // ===== AP =====
   if (useEditableAp) {
     const apFormula = buildApFormula({
       sheetName,
@@ -158,7 +153,6 @@ rows.forEach((r, i) => {
   row.getCell(15).value = r.recommended_action || "";
   row.getCell(16).value = r.responsibility || r.assigned_to || "";
 
-  // ===== DATES =====
   const targetDate = toExcelDate(r.target_completion_date || r.action_due_date);
   const completionDate = toExcelDate(r.completion_date);
 
@@ -172,7 +166,6 @@ rows.forEach((r, i) => {
   cellS.value = completionDate;
   cellS.numFmt = "dd.mm.yyyy";
 
-  // ===== RESIDUAL =====
   row.getCell(20).value = r.severity_override != null ? Number(r.severity_override) : null;
   row.getCell(21).value = r.occurrence_override != null ? Number(r.occurrence_override) : null;
   row.getCell(22).value = r.detection_override != null ? Number(r.detection_override) : null;
@@ -193,7 +186,7 @@ rows.forEach((r, i) => {
 
   row.getCell(24).value = r.moderation_notes || "";
 
-  // ✅ APPLY CENTER ALIGNMENT
+  // ✅ apply center
   centerRowCells(row);
 
   row.commit();
