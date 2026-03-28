@@ -2,7 +2,67 @@ import ExcelJS from "exceljs";
 import path from "path";
 import fs from "fs";
 
+// ✅ SAFE formula builder (same as Railway)
+function quoteSheetName(sheetName) {
+  return "'" + String(sheetName).replace(/'/g, "''") + "'";
+}
+
+function buildApFormula({ sheetName, rowNumber, sCol, oCol, dCol }) {
+  const fmeaSheet = quoteSheetName(sheetName);
+
+  return (
+    "IFERROR(INDEX('AP Table'!$E$3:$E$1002, MATCH(1, " +
+    "('AP Table'!$B$3:$B$1002=" + fmeaSheet + "!" + sCol + rowNumber + ")*" +
+    "('AP Table'!$C$3:$C$1002=" + fmeaSheet + "!" + oCol + rowNumber + ")*" +
+    "('AP Table'!$D$3:$D$1002=" + fmeaSheet + "!" + dCol + rowNumber + "), 0)), \"\")"
+  );
+}
+
+// ✅ Copy styles + enforce center alignment
+function copyTemplateRowStyle(templateRow, targetRow) {
+  templateRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    const targetCell = targetRow.getCell(colNumber);
+
+    targetCell.style = JSON.parse(JSON.stringify(cell.style || {}));
+
+    if (cell.numFmt) targetCell.numFmt = cell.numFmt;
+    if (cell.font) targetCell.font = JSON.parse(JSON.stringify(cell.font));
+    if (cell.fill) targetCell.fill = JSON.parse(JSON.stringify(cell.fill));
+    if (cell.border) targetCell.border = JSON.parse(JSON.stringify(cell.border));
+
+    targetCell.alignment = {
+      ...(cell.alignment || {}),
+      horizontal: "center",
+      vertical: "middle",
+      wrapText: true,
+    };
+  });
+
+  if (templateRow.height) {
+    targetRow.height = templateRow.height;
+  }
+}
+
+function setFormulaCell(cell, formula, result) {
+  cell.value = {
+    formula: formula,
+    result: result || "",
+  };
+
+  cell.alignment = {
+    horizontal: "center",
+    vertical: "middle",
+  };
+}
+
+function toExcelDate(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  return isNaN(d) ? null : d;
+}
+
 export default async function handler(req, res) {
+  // ✅ CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -28,6 +88,7 @@ export default async function handler(req, res) {
       ? "template-editable-ap.xlsx"
       : "template.xlsx";
 
+    // ✅ VERCEL PATH FIX
     const templatePath = path.join(process.cwd(), "templates", templateFile);
 
     if (!fs.existsSync(templatePath)) {
@@ -41,33 +102,18 @@ export default async function handler(req, res) {
     await workbook.xlsx.load(fileBuffer);
 
     const sheet = workbook.worksheets[0];
+    const sheetName = sheet.name || "FMEA";
 
     const START_ROW = 16;
     const templateRow = sheet.getRow(START_ROW);
-
-    function toExcelDate(value) {
-      if (!value) return null;
-      const d = new Date(value);
-      return isNaN(d) ? null : d;
-    }
 
     rows.forEach((r, i) => {
       const rowIndex = START_ROW + i;
       const row = sheet.getRow(rowIndex);
 
-      templateRow.eachCell({ includeEmpty: true }, (cell, col) => {
-        const target = row.getCell(col);
+      copyTemplateRowStyle(templateRow, row);
 
-        target.style = JSON.parse(JSON.stringify(cell.style || {}));
-
-        target.alignment = {
-          horizontal: "center",
-          vertical: "middle",
-          wrapText: true,
-        };
-      });
-
-      // ===== MAIN DATA =====
+      // ===== DATA =====
       row.getCell(3).value = r.process_step || "";
       row.getCell(4).value = r.function || "";
       row.getCell(5).value = r.failure_mode || "";
@@ -84,37 +130,39 @@ export default async function handler(req, res) {
 
       row.getCell(11).value = r.detection != null ? Number(r.detection) : null;
 
-      // ===== AP (COLUMN L) =====
+      // ===== AP =====
       if (useEditableAp) {
-        const formula =
-          "INDEX('AP Table'!E3:E1002; MATCH(1; " +
-          "('AP Table'!B3:B1002=FMEA!G" + rowIndex + ")*" +
-          "('AP Table'!C3:C1002=FMEA!I" + rowIndex + ")*" +
-          "('AP Table'!D3:D1002=FMEA!K" + rowIndex + "); 0))";
+        const apFormula = buildApFormula({
+          sheetName,
+          rowNumber: rowIndex,
+          sCol: "G",
+          oCol: "I",
+          dCol: "K",
+        });
 
-        row.getCell(12).value = { formula };
+        setFormulaCell(row.getCell(12), apFormula, r.action_priority || "");
       } else {
         row.getCell(12).value = r.action_priority || "";
       }
 
       row.getCell(15).value = r.recommended_action || "";
-      row.getCell(16).value = r.responsibility || "";
+      row.getCell(16).value = r.responsibility || r.assigned_to || "";
 
       // ===== DATES =====
-      const d1 = toExcelDate(r.target_completion_date);
-      const d2 = toExcelDate(r.completion_date);
+      const targetDate = toExcelDate(r.target_completion_date || r.action_due_date);
+      const completionDate = toExcelDate(r.completion_date);
 
-      const c1 = row.getCell(17);
-      c1.value = d1;
-      c1.numFmt = "dd.mm.yyyy";
+      const cellQ = row.getCell(17);
+      cellQ.value = targetDate;
+      cellQ.numFmt = "dd.mm.yyyy";
 
       row.getCell(18).value = r.action_status || "";
 
-      const c2 = row.getCell(19);
-      c2.value = d2;
-      c2.numFmt = "dd.mm.yyyy";
+      const cellS = row.getCell(19);
+      cellS.value = completionDate;
+      cellS.numFmt = "dd.mm.yyyy";
 
-      // ===== RESIDUAL S O D =====
+      // ===== RESIDUAL =====
       row.getCell(20).value =
         r.severity_override != null ? Number(r.severity_override) : null;
 
@@ -124,15 +172,16 @@ export default async function handler(req, res) {
       row.getCell(22).value =
         r.detection_override != null ? Number(r.detection_override) : null;
 
-      // ===== RESIDUAL AP (COLUMN W) =====
       if (useEditableAp) {
-        const residualFormula =
-          "INDEX('AP Table'!E3:E1002; MATCH(1; " +
-          "('AP Table'!B3:B1002=FMEA!T" + rowIndex + ")*" +
-          "('AP Table'!C3:C1002=FMEA!U" + rowIndex + ")*" +
-          "('AP Table'!D3:D1002=FMEA!V" + rowIndex + "); 0))";
+        const residualApFormula = buildApFormula({
+          sheetName,
+          rowNumber: rowIndex,
+          sCol: "T",
+          oCol: "U",
+          dCol: "V",
+        });
 
-        row.getCell(23).value = { formula: residualFormula };
+        setFormulaCell(row.getCell(23), residualApFormula, r.action_priority_override || "");
       } else {
         row.getCell(23).value = r.action_priority_override || "";
       }
@@ -155,7 +204,7 @@ export default async function handler(req, res) {
 
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${filename}"`
+      "attachment; filename=\"" + filename + "\""
     );
 
     return res.status(200).send(buffer);
