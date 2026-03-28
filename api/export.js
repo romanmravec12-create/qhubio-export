@@ -88,7 +88,18 @@ export default async function handler(req, res) {
       row.getCell(11).value = r.detection != null ? Number(r.detection) : null;
 
       // ===== AP (COLUMN L) =====
-      row.getCell(12).value = r.action_priority || "";
+      if (useEditableAp) {
+        // 🔥 FORCE formula (DO NOT inject value)
+        const formula =
+          "IFERROR(INDEX('AP Table'!$E$3:$E$1002, MATCH(1, " +
+          "('AP Table'!$B$3:$B$1002=G" + rowIndex + ")*" +
+          "('AP Table'!$C$3:$C$1002=I" + rowIndex + ")*" +
+          "('AP Table'!$D$3:$D$1002=K" + rowIndex + "), 0)), \"\")";
+
+        row.getCell(12).value = { formula };
+      } else {
+        row.getCell(12).value = r.action_priority || "";
+      }
 
       row.getCell(15).value = r.recommended_action || "";
       row.getCell(16).value = r.responsibility || "";
@@ -118,11 +129,18 @@ export default async function handler(req, res) {
         r.detection_override != null ? Number(r.detection_override) : null;
 
       // ===== RESIDUAL AP (W) =====
-      if (!useEditableAp) {
-        // ONLY for non-editable template
+      if (useEditableAp) {
+        // 🔥 FORCE formula for residual AP
+        const residualFormula =
+          "IFERROR(INDEX('AP Table'!$E$3:$E$1002, MATCH(1, " +
+          "('AP Table'!$B$3:$B$1002=T" + rowIndex + ")*" +
+          "('AP Table'!$C$3:$C$1002=U" + rowIndex + ")*" +
+          "('AP Table'!$D$3:$D$1002=V" + rowIndex + "), 0)), \"\")";
+
+        row.getCell(23).value = { formula: residualFormula };
+      } else {
         row.getCell(23).value = r.action_priority_override || "";
       }
-      // editable template → Excel handles it
 
       row.getCell(24).value = r.moderation_notes || "";
 
