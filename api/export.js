@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 
 export default async function handler(req, res) {
-  // ✅ CORS (CRITICAL FOR VERCEL)
+  // ✅ CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -31,13 +31,12 @@ export default async function handler(req, res) {
 
     const templatePath = path.join(process.cwd(), "templates", templateFile);
 
-    // ✅ SAFETY CHECK (prevents silent failure)
+    // ✅ SAFETY CHECK
     if (!fs.existsSync(templatePath)) {
       console.error("❌ Template not found:", templatePath);
       return res.status(500).json({ error: "Template missing on server" });
     }
 
-    // 🔥 VERCEL-SAFE LOAD
     const fileBuffer = fs.readFileSync(templatePath);
 
     const workbook = new ExcelJS.Workbook();
@@ -58,7 +57,7 @@ export default async function handler(req, res) {
       const rowIndex = START_ROW + i;
       const row = sheet.getRow(rowIndex);
 
-      // ✅ Copy style + enforce CENTER alignment
+      // ✅ Copy style + CENTER alignment
       templateRow.eachCell({ includeEmpty: true }, (cell, col) => {
         const target = row.getCell(col);
 
@@ -71,7 +70,7 @@ export default async function handler(req, res) {
         };
       });
 
-      // ===== DATA =====
+      // ===== MAIN DATA =====
       row.getCell(3).value = r.process_step || "";
       row.getCell(4).value = r.function || "";
       row.getCell(5).value = r.failure_mode || "";
@@ -88,7 +87,7 @@ export default async function handler(req, res) {
 
       row.getCell(11).value = r.detection != null ? Number(r.detection) : null;
 
-      // ===== AP =====
+      // ===== AP (COLUMN L) =====
       row.getCell(12).value = r.action_priority || "";
 
       row.getCell(15).value = r.recommended_action || "";
@@ -107,6 +106,25 @@ export default async function handler(req, res) {
       const c2 = row.getCell(19);
       c2.value = d2;
       c2.numFmt = "dd.mm.yyyy";
+
+      // ===== RESIDUAL S / O / D (T U V) =====
+      row.getCell(20).value =
+        r.severity_override != null ? Number(r.severity_override) : null;
+
+      row.getCell(21).value =
+        r.occurrence_override != null ? Number(r.occurrence_override) : null;
+
+      row.getCell(22).value =
+        r.detection_override != null ? Number(r.detection_override) : null;
+
+      // ===== RESIDUAL AP (W) =====
+      if (!useEditableAp) {
+        // ONLY for non-editable template
+        row.getCell(23).value = r.action_priority_override || "";
+      }
+      // editable template → Excel handles it
+
+      row.getCell(24).value = r.moderation_notes || "";
 
       row.commit();
     });
