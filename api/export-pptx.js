@@ -254,6 +254,11 @@ function sampleLine(row) {
   return `${step} — ${fm}`;
 }
 
+function barPercent(value, total) {
+  if (!total || total <= 0) return 0;
+  return Math.round((value / total) * 100);
+}
+
 function openActionsText(count, total) {
   const pct = total ? Math.round((count / total) * 100) : 0;
   return `${count} open actions (${pct}%)`;
