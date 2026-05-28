@@ -1,4 +1,3 @@
-```javascript
 import pptxgen from "pptxgenjs";
 
 function applyCors(req, res) {
@@ -808,4 +807,3 @@ export default async function handler(req, res) {
     });
   }
 }
-```
