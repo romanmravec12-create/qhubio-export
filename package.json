@@ -1,6 +1,7 @@
 {
   "type": "module",
   "dependencies": {
-    "exceljs": "^4.3.0"
+    "exceljs": "^4.3.0",
+    "pptxgenjs": "3.12.0"
   }
 }
