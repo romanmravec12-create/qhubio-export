@@ -1,106 +1,163 @@
-import pptxgen from "pptxgenjs";
+import PptxGenJS from "pptxgenjs";
 
-function applyCors(req, res) {
+// =========================
+// CORS
+// =========================
+function applyCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization"
-  );
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
-function normalizeAp(ap) {
-  const v = String(ap || "").toLowerCase();
-
-  if (v.includes("high")) return "High";
-  if (v.includes("medium")) return "Medium";
-  return "Low";
+// =========================
+// HELPERS
+// =========================
+function safe(value) {
+  return value == null ? "" : String(value);
 }
 
-function barPercent(value, total) {
-  if (!total || total <= 0) return 0;
+function percent(value, total) {
+  if (!total) return 0;
   return Math.round((value / total) * 100);
 }
 
-function groupThemes(rows) {
+function normalizeText(text) {
+  return safe(text).toLowerCase();
+}
+
+function detectTheme(row) {
+  const combined = [
+    row.process_step,
+    row.failure_mode,
+    row.cause,
+    row.effect,
+    row.recommended_action,
+  ]
+    .map(normalizeText)
+    .join(" ");
+
+  // ===== IMPORTANT =====
+  // Restored deterministic grouping logic
+  // Keep this stable and predictable
+
+  if (
+    combined.includes("software") ||
+    combined.includes("system") ||
+    combined.includes("interface") ||
+    combined.includes("data") ||
+    combined.includes("erp") ||
+    combined.includes("sap") ||
+    combined.includes("api")
+  ) {
+    return "Software & Data";
+  }
+
+  if (
+    combined.includes("traceability") ||
+    combined.includes("identification") ||
+    combined.includes("barcode") ||
+    combined.includes("serial") ||
+    combined.includes("label")
+  ) {
+    return "Identification & Traceability";
+  }
+
+  if (
+    combined.includes("documentation") ||
+    combined.includes("record") ||
+    combined.includes("signature") ||
+    combined.includes("report") ||
+    combined.includes("inspection")
+  ) {
+    return "Documentation & Traceability";
+  }
+
+  return "Other Operational Areas";
+}
+
+function buildThemeStats(rows) {
   const map = {};
 
-  rows.forEach((r) => {
-    const txt = `
-      ${r.process_step || ""}
-      ${r.failure_mode || ""}
-      ${r.cause || ""}
-      ${r.effect || ""}
-    `.toLowerCase();
-
-    let theme = "Other Operational Areas";
-
-    if (
-      txt.includes("software") ||
-      txt.includes("system") ||
-      txt.includes("data")
-    ) {
-      theme = "Software & Data";
-    } else if (
-      txt.includes("document") ||
-      txt.includes("trace") ||
-      txt.includes("record")
-    ) {
-      theme = "Documentation & Traceability";
-    } else if (
-      txt.includes("label") ||
-      txt.includes("identification") ||
-      txt.includes("barcode")
-    ) {
-      theme = "Identification & Traceability";
-    }
+  rows.forEach((row) => {
+    const theme = detectTheme(row);
 
     if (!map[theme]) {
-      map[theme] = [];
+      map[theme] = {
+        name: theme,
+        count: 0,
+        sample: row,
+      };
     }
 
-    map[theme].push(r);
+    map[theme].count += 1;
   });
 
-  return Object.entries(map)
-    .map(([theme, items]) => ({
-      theme,
-      count: items.length,
-      sample: items[0],
-    }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 4);
+  return Object.values(map).sort((a, b) => b.count - a.count);
 }
 
-function addFooter(slide, processName) {
-  slide.addText(
-    `Qhubio Executive Summary • ${processName}`,
-    {
-      x: 0.3,
-      y: 7.0,
-      w: 6,
-      h: 0.2,
-      fontSize: 9,
-      color: "777777",
-    }
-  );
-
-  slide.addText(
-    `Confidential`,
-    {
-      x: 11,
-      y: 7.0,
-      w: 1.5,
-      h: 0.2,
-      align: "right",
-      fontSize: 9,
-      color: "777777",
-    }
-  );
+function topCriticalItems(rows) {
+  return rows
+    .filter((r) => safe(r.action_priority).toLowerCase().includes("high"))
+    .slice(0, 6);
 }
 
+function addTitle(slide, title, subtitle, slideNumber) {
+  slide.addShape("rect", {
+    x: 0,
+    y: 0,
+    w: 13.33,
+    h: 0.6,
+    fill: { color: "5B2D91" },
+    line: { color: "5B2D91" },
+  });
+
+  slide.addText(title, {
+    x: 0.4,
+    y: 0.12,
+    w: 5,
+    h: 0.3,
+    fontSize: 24,
+    bold: true,
+    color: "FFFFFF",
+  });
+
+  slide.addText(subtitle, {
+    x: 0.4,
+    y: 0.38,
+    w: 5,
+    h: 0.2,
+    fontSize: 9,
+    color: "F3EFFF",
+  });
+
+  slide.addText(String(slideNumber), {
+    x: 12.9,
+    y: 0.12,
+    w: 0.2,
+    h: 0.2,
+    fontSize: 10,
+    color: "FFFFFF",
+    bold: true,
+  });
+}
+
+function addFooter(slide) {
+  slide.addText("Confidential", {
+    x: 11.7,
+    y: 7.15,
+    w: 1.2,
+    h: 0.2,
+    fontSize: 8,
+    color: "777777",
+    italic: true,
+  });
+}
+
+// =========================
+// MAIN
+// =========================
 export default async function handler(req, res) {
-  applyCors(req, res);
+  applyCors(res);
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
@@ -116,10 +173,9 @@ export default async function handler(req, res) {
   try {
     const {
       rows = [],
-      processName = "Process",
-      companyName = "Company",
-      generatedBy = "Qhubio",
-    } = req.body;
+      processName = "P-FMEA Process",
+      userName = "User",
+    } = req.body || {};
 
     if (!Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({
@@ -128,454 +184,637 @@ export default async function handler(req, res) {
       });
     }
 
-    const pptx = new pptxgen();
+    const pptx = new PptxGenJS();
 
     pptx.layout = "LAYOUT_WIDE";
     pptx.author = "Qhubio";
-    pptx.company = companyName;
+    pptx.company = "Qhubio";
     pptx.subject = "P-FMEA Executive Summary";
-    pptx.title = `P-FMEA Executive Summary - ${processName}`;
+    pptx.title = processName;
     pptx.lang = "en-US";
+    pptx.theme = {
+      headFontFace: "Aptos",
+      bodyFontFace: "Aptos",
+      lang: "en-US",
+    };
 
+    // =========================
+    // STATS
+    // =========================
     const total = rows.length;
 
-    const high = rows.filter(
-      (r) => normalizeAp(r.action_priority) === "High"
+    const high = rows.filter((r) =>
+      safe(r.action_priority).toLowerCase().includes("high")
     ).length;
 
-    const medium = rows.filter(
-      (r) => normalizeAp(r.action_priority) === "Medium"
+    const medium = rows.filter((r) =>
+      safe(r.action_priority).toLowerCase().includes("medium")
     ).length;
 
-    const low = rows.filter(
-      (r) => normalizeAp(r.action_priority) === "Low"
+    const low = rows.filter((r) =>
+      safe(r.action_priority).toLowerCase().includes("low")
     ).length;
 
-    const openActions = rows.filter(
-      (r) =>
-        !r.action_status ||
-        String(r.action_status).toLowerCase() !== "closed"
-    ).length;
+    const highPct = percent(high, total);
+    const mediumPct = percent(medium, total);
+    const lowPct = percent(low, total);
 
-    const themes = groupThemes(rows);
+    const themes = buildThemeStats(rows);
 
-    const criticalItems = [...rows]
-      .filter((r) => normalizeAp(r.action_priority) === "High")
-      .slice(0, 6);
-
-    // =========================================================
+    // =========================
     // SLIDE 1
-    // =========================================================
-
+    // =========================
     {
       const slide = pptx.addSlide();
 
-      slide.background = { color: "F8F6FC" };
-
-      slide.addText("P-FMEA Executive Summary", {
-        x: 0.6,
-        y: 0.4,
-        w: 6,
-        h: 0.5,
-        fontFace: "Aptos",
-        bold: true,
-        fontSize: 28,
-        color: "4B1F6F",
-      });
-
-      slide.addText(processName, {
-        x: 0.6,
-        y: 1.0,
-        w: 9,
-        h: 0.3,
-        fontSize: 18,
-        color: "555555",
-      });
-
-      slide.addShape(pptx.ShapeType.rect, {
-        x: 0.6,
-        y: 1.6,
-        w: 2.2,
-        h: 1.2,
-        fill: { color: "7C3AED" },
-        line: { color: "7C3AED" },
-        radius: 0.1,
-      });
-
-      slide.addText(String(high), {
-        x: 0.6,
-        y: 1.8,
-        w: 2.2,
-        h: 0.4,
-        align: "center",
-        fontSize: 28,
-        bold: true,
-        color: "FFFFFF",
-      });
-
-      slide.addText("High AP Risks", {
-        x: 0.6,
-        y: 2.3,
-        w: 2.2,
-        h: 0.2,
-        align: "center",
-        fontSize: 12,
-        color: "FFFFFF",
-      });
-
-      slide.addShape(pptx.ShapeType.rect, {
-        x: 3.0,
-        y: 1.6,
-        w: 2.2,
-        h: 1.2,
-        fill: { color: "F59E0B" },
-        line: { color: "F59E0B" },
-        radius: 0.1,
-      });
-
-      slide.addText(String(openActions), {
-        x: 3.0,
-        y: 1.8,
-        w: 2.2,
-        h: 0.4,
-        align: "center",
-        fontSize: 28,
-        bold: true,
-        color: "FFFFFF",
-      });
-
-      slide.addText("Open Actions", {
-        x: 3.0,
-        y: 2.3,
-        w: 2.2,
-        h: 0.2,
-        align: "center",
-        fontSize: 12,
-        color: "FFFFFF",
-      });
+      addTitle(
+        slide,
+        "P-FMEA Executive Summary",
+        processName,
+        1
+      );
 
       slide.addText(
-        `The analysis identified ${high} high-priority risks out of ${total} reviewed failure modes.`,
+        `Generated for ${userName}`,
         {
-          x: 0.6,
-          y: 3.4,
-          w: 10,
-          h: 0.5,
-          fontSize: 18,
-          color: "333333",
+          x: 0.5,
+          y: 1.0,
+          w: 4,
+          h: 0.3,
+          fontSize: 16,
+          color: "5B2D91",
           bold: true,
         }
       );
 
       slide.addText(
-        "This presentation provides a management-level overview focused on risk exposure, operational concentration, and recommended execution priorities.",
+        `Total reviewed failure modes: ${total}`,
         {
-          x: 0.6,
-          y: 4.1,
-          w: 11,
-          h: 1,
-          fontSize: 15,
-          color: "555555",
+          x: 0.5,
+          y: 1.4,
+          w: 5,
+          h: 0.3,
+          fontSize: 20,
+          bold: true,
         }
       );
 
       slide.addText(
-        `Generated by ${generatedBy} • ${new Date().toLocaleDateString()}`,
+        `High AP risks identified: ${high}`,
         {
-          x: 0.6,
-          y: 6.4,
+          x: 0.5,
+          y: 1.8,
           w: 5,
           h: 0.3,
-          fontSize: 11,
-          color: "777777",
+          fontSize: 20,
+          bold: true,
+          color: "D62828",
         }
       );
 
-      addFooter(slide, processName);
+      slide.addText(
+        "This presentation provides a management-level overview focused on operational exposure, dominant risk concentration, and execution priorities.",
+        {
+          x: 0.5,
+          y: 2.5,
+          w: 7,
+          h: 1,
+          fontSize: 16,
+          color: "444444",
+        }
+      );
+
+      addFooter(slide);
     }
 
-    // =========================================================
-    // SLIDE 2 — PIE CHART
-    // =========================================================
-
+    // =========================
+    // SLIDE 2
+    // =========================
     {
       const slide = pptx.addSlide();
 
-      slide.addText("Risk Distribution", {
-        x: 0.5,
-        y: 0.4,
-        w: 5,
-        h: 0.4,
-        fontSize: 24,
-        bold: true,
-        color: "4B1F6F",
-      });
+      addTitle(
+        slide,
+        "Executive Summary",
+        "High-level operational overview",
+        2
+      );
 
-      slide.addChart(
-        pptx.ChartType.pie,
-        [
-          {
-            name: "Risk Split",
-            labels: ["High", "Medium", "Low"],
-            values: [high, medium, low],
-          },
-        ],
+      slide.addText(
+        `• ${highPct}% of all risks are classified as High AP\n\n• ${total} actions currently require tracking and execution\n\n• Main operational focus should remain on ownership, mitigation prioritization, and execution follow-up\n\n• Dominant recurring themes indicate concentrated operational exposure`,
         {
           x: 0.8,
           y: 1.2,
-          w: 4.5,
-          h: 4.5,
-          showLegend: true,
-          showTitle: false,
-          dataLabelPosition: "bestFit",
+          w: 10,
+          h: 3,
+          fontSize: 18,
+          color: "333333",
+          breakLine: false,
         }
       );
 
-      slide.addText(
-        `High AP items represent ${barPercent(high, total)}% of all identified risks.`,
+      addFooter(slide);
+    }
+
+    // =========================
+    // SLIDE 3 - FIXED
+    // =========================
+    {
+      const slide = pptx.addSlide();
+
+      addTitle(
+        slide,
+        "Risk Distribution",
+        "Quick view of the Action Priority breakdown",
+        3
+      );
+
+      slide.addText("Action Priority split", {
+        x: 0.5,
+        y: 0.9,
+        w: 3,
+        h: 0.3,
+        fontSize: 18,
+        bold: true,
+        color: "5B2D91",
+      });
+
+      const totalWidth = 9.5;
+      const highW = (high / total) * totalWidth;
+      const medW = (medium / total) * totalWidth;
+      const lowW = (low / total) * totalWidth;
+
+      slide.addShape("rect", {
+        x: 0.7,
+        y: 1.4,
+        w: highW,
+        h: 0.45,
+        fill: { color: "E52521" },
+        line: { color: "E52521" },
+      });
+
+      slide.addShape("rect", {
+        x: 0.7 + highW,
+        y: 1.4,
+        w: medW,
+        h: 0.45,
+        fill: { color: "F28C28" },
+        line: { color: "F28C28" },
+      });
+
+      slide.addShape("rect", {
+        x: 0.7 + highW + medW,
+        y: 1.4,
+        w: lowW,
+        h: 0.45,
+        fill: { color: "2CA02C" },
+        line: { color: "2CA02C" },
+      });
+
+      slide.addText(`High ${high}`, {
+        x: 0.7,
+        y: 1.47,
+        w: highW,
+        h: 0.2,
+        fontSize: 11,
+        bold: true,
+        align: "center",
+        color: "FFFFFF",
+      });
+
+      // ===== KPI CARDS =====
+      const cards = [
         {
-          x: 6,
-          y: 2,
-          w: 5,
-          h: 0.5,
-          fontSize: 20,
+          title: "High AP",
+          count: high,
+          pct: highPct,
+          color: "E52521",
+          x: 0.6,
+        },
+        {
+          title: "Medium AP",
+          count: medium,
+          pct: mediumPct,
+          color: "F28C28",
+          x: 4.2,
+        },
+        {
+          title: "Low AP",
+          count: low,
+          pct: lowPct,
+          color: "2CA02C",
+          x: 7.8,
+        },
+      ];
+
+      cards.forEach((c) => {
+        slide.addShape("rect", {
+          x: c.x,
+          y: 2.2,
+          w: 3.0,
+          h: 1.2,
+          fill: { color: "FFFFFF" },
+          line: { color: "DADADA" },
+        });
+
+        slide.addShape("rect", {
+          x: c.x,
+          y: 2.2,
+          w: 0.18,
+          h: 1.2,
+          fill: { color: c.color },
+          line: { color: c.color },
+        });
+
+        slide.addText(c.title, {
+          x: c.x + 0.25,
+          y: 2.35,
+          w: 1.5,
+          h: 0.2,
+          fontSize: 13,
           bold: true,
+          color: "666666",
+        });
+
+        slide.addText(`${c.count} (${c.pct}%)`, {
+          x: c.x + 0.25,
+          y: 2.58,
+          w: 2,
+          h: 0.3,
+          fontSize: 22,
+          bold: true,
+          color: "222222",
+        });
+      });
+
+      slide.addShape("rect", {
+        x: 0.6,
+        y: 3.7,
+        w: 10.2,
+        h: 1,
+        fill: { color: "F7F7F7" },
+        line: { color: "DADADA" },
+      });
+
+      slide.addText("Action focus", {
+        x: 0.8,
+        y: 3.9,
+        w: 2,
+        h: 0.2,
+        fontSize: 16,
+        bold: true,
+        color: "5B2D91",
+      });
+
+      slide.addText(
+        `Open actions: ${total} open actions (${percent(total, total)}%) • Completed/closed: 0`,
+        {
+          x: 0.8,
+          y: 4.15,
+          w: 6,
+          h: 0.2,
+          fontSize: 14,
           color: "333333",
         }
       );
 
-      slide.addText(
-        "Management focus should remain on ownership assignment, mitigation prioritization, and closure tracking of the high-priority exposure areas.",
-        {
-          x: 6,
-          y: 3,
-          w: 5.5,
-          h: 1.2,
-          fontSize: 15,
-          color: "555555",
-        }
-      );
-
-      addFooter(slide, processName);
+      addFooter(slide);
     }
 
-    // =========================================================
-    // SLIDE 3 — THEMES BAR CHART
-    // =========================================================
-
+    // =========================
+    // SLIDE 4 - FIXED THEMES
+    // =========================
     {
       const slide = pptx.addSlide();
 
-      slide.addText("Top Risk Themes", {
-        x: 0.5,
-        y: 0.4,
-        w: 5,
-        h: 0.4,
-        fontSize: 24,
-        bold: true,
-        color: "4B1F6F",
-      });
-
-      slide.addChart(
-        pptx.ChartType.bar,
-        [
-          {
-            name: "Themes",
-            labels: themes.map((t) => t.theme),
-            values: themes.map((t) => t.count),
-          },
-        ],
-        {
-          x: 0.7,
-          y: 1.2,
-          w: 5.5,
-          h: 4.5,
-          catAxisLabelFontSize: 12,
-          valAxisLabelFontSize: 10,
-          showLegend: false,
-        }
+      addTitle(
+        slide,
+        "Top Risk Themes",
+        "Consolidated risk clusters based on deterministic grouping",
+        4
       );
 
-      let y = 1.3;
+      const colors = [
+        "6B7A90",
+        "2F6BFF",
+        "1DA1F2",
+        "E84393",
+      ];
 
-      themes.forEach((t) => {
+      themes.slice(0, 4).forEach((theme, idx) => {
+        const x = idx % 2 === 0 ? 0.6 : 6.1;
+        const y = idx < 2 ? 1.0 : 3.3;
+
+        slide.addShape("rect", {
+          x,
+          y,
+          w: 4.8,
+          h: 1.8,
+          fill: { color: "FFFFFF" },
+          line: { color: "DADADA" },
+        });
+
+        slide.addShape("rect", {
+          x,
+          y,
+          w: 0.18,
+          h: 1.8,
+          fill: { color: colors[idx] },
+          line: { color: colors[idx] },
+        });
+
+        slide.addText(theme.name, {
+          x: x + 0.3,
+          y: y + 0.18,
+          w: 3.5,
+          h: 0.2,
+          fontSize: 18,
+          bold: true,
+          color: "5B2D91",
+        });
+
+        slide.addText(`Count: ${theme.count}`, {
+          x: x + 0.3,
+          y: y + 0.5,
+          w: 2,
+          h: 0.2,
+          fontSize: 14,
+          bold: true,
+          color: colors[idx],
+        });
+
         slide.addText(
-          `${t.theme}: ${t.count} risks`,
+          `Representative item: ${safe(theme.sample.process_step)} — ${safe(theme.sample.failure_mode)}`,
           {
-            x: 6.6,
-            y,
-            w: 5,
-            h: 0.3,
-            fontSize: 16,
-            bold: true,
+            x: x + 0.3,
+            y: y + 0.9,
+            w: 4,
+            h: 0.4,
+            fontSize: 11,
             color: "333333",
           }
         );
-
-        y += 0.45;
       });
 
-      addFooter(slide, processName);
+      addFooter(slide);
     }
 
-    // =========================================================
-    // SLIDE 4 — CRITICAL ITEMS
-    // =========================================================
-
+    // =========================
+    // SLIDE 5
+    // =========================
     {
       const slide = pptx.addSlide();
 
-      slide.addText("Top Critical Items", {
-        x: 0.5,
-        y: 0.4,
-        w: 5,
-        h: 0.4,
-        fontSize: 24,
-        bold: true,
-        color: "4B1F6F",
-      });
+      addTitle(
+        slide,
+        "Top Critical Items",
+        "Highest-priority execution focus areas",
+        5
+      );
 
-      const tableRows = [
-        [
-          { text: "Process Step", options: { bold: true } },
-          { text: "Failure Mode", options: { bold: true } },
-          { text: "AP", options: { bold: true } },
-          { text: "Recommended Action", options: { bold: true } },
-        ],
-      ];
-
-      criticalItems.forEach((r) => {
-        tableRows.push([
-          r.process_step || "",
-          r.failure_mode || "",
-          normalizeAp(r.action_priority),
-          r.recommended_action || "",
-        ]);
-      });
-
-      slide.addTable(tableRows, {
-        x: 0.4,
-        y: 1.1,
-        w: 12.2,
-        border: {
-          type: "solid",
-          color: "CCCCCC",
-          pt: 1,
-        },
-        fontSize: 11,
-        color: "333333",
-        fill: "FFFFFF",
-      });
-
-      addFooter(slide, processName);
-    }
-
-    // =========================================================
-    // SLIDE 5 — NEXT STEPS
-    // =========================================================
-
-    {
-      const slide = pptx.addSlide();
-
-      slide.addText("Recommended Next Steps", {
-        x: 0.5,
-        y: 0.4,
-        w: 6,
-        h: 0.4,
-        fontSize: 24,
-        bold: true,
-        color: "4B1F6F",
-      });
-
-      const steps = [
-        "Assign ownership for all High AP items.",
-        "Validate mitigation feasibility with process owners.",
-        "Track closure progress in the Excel execution register.",
-        "Review recurring operational themes quarterly.",
-      ];
-
-      let y = 1.5;
-
-      steps.forEach((s, i) => {
-        slide.addShape(pptx.ShapeType.ellipse, {
-          x: 0.7,
-          y,
-          w: 0.35,
-          h: 0.35,
-          fill: { color: "7C3AED" },
-          line: { color: "7C3AED" },
-        });
-
-        slide.addText(String(i + 1), {
-          x: 0.77,
-          y: y + 0.02,
-          w: 0.2,
-          h: 0.2,
-          fontSize: 10,
-          bold: true,
-          color: "FFFFFF",
-          align: "center",
-        });
-
-        slide.addText(s, {
-          x: 1.2,
-          y: y - 0.02,
-          w: 9,
-          h: 0.3,
-          fontSize: 18,
-          color: "333333",
-        });
-
-        y += 0.9;
-      });
-
-      addFooter(slide, processName);
-    }
-
-    // =========================================================
-    // SLIDE 6 — CLOSING
-    // =========================================================
-
-    {
-      const slide = pptx.addSlide();
-
-      slide.background = { color: "4B1F6F" };
-
-      slide.addText("Thank you", {
-        x: 0.8,
-        y: 2,
-        w: 4,
-        h: 0.5,
-        fontSize: 30,
-        bold: true,
-        color: "FFFFFF",
-      });
+      const critical = topCriticalItems(rows);
 
       slide.addText(
-        "Use this executive summary to guide the management review discussion and action prioritization.",
+        "Process Step",
         {
-          x: 0.8,
-          y: 3,
-          w: 8,
-          h: 1,
-          fontSize: 18,
+          x: 0.5,
+          y: 1.0,
+          w: 2,
+          h: 0.2,
+          bold: true,
+          fontSize: 12,
           color: "FFFFFF",
+        }
+      );
+
+      slide.addText(
+        "Failure Mode",
+        {
+          x: 2.6,
+          y: 1.0,
+          w: 3.2,
+          h: 0.2,
+          bold: true,
+          fontSize: 12,
+          color: "FFFFFF",
+        }
+      );
+
+      slide.addText(
+        "AP",
+        {
+          x: 6.0,
+          y: 1.0,
+          w: 0.5,
+          h: 0.2,
+          bold: true,
+          fontSize: 12,
+          color: "FFFFFF",
+        }
+      );
+
+      slide.addText(
+        "Recommended Action",
+        {
+          x: 6.8,
+          y: 1.0,
+          w: 4.5,
+          h: 0.2,
+          bold: true,
+          fontSize: 12,
+          color: "FFFFFF",
+        }
+      );
+
+      slide.addShape("rect", {
+        x: 0.4,
+        y: 0.9,
+        w: 11,
+        h: 0.35,
+        fill: { color: "5B2D91" },
+        line: { color: "5B2D91" },
+      });
+
+      critical.forEach((item, idx) => {
+        const y = 1.4 + idx * 0.7;
+
+        slide.addShape("line", {
+          x: 0.4,
+          y,
+          w: 11,
+          h: 0,
+          line: { color: "DDDDDD", pt: 1 },
+        });
+
+        slide.addText(safe(item.process_step), {
+          x: 0.5,
+          y: y + 0.08,
+          w: 2,
+          h: 0.3,
+          fontSize: 10,
+        });
+
+        slide.addText(safe(item.failure_mode), {
+          x: 2.6,
+          y: y + 0.08,
+          w: 3.2,
+          h: 0.3,
+          fontSize: 10,
+        });
+
+        slide.addShape("roundRect", {
+          x: 6.0,
+          y: y + 0.04,
+          w: 0.6,
+          h: 0.25,
+          rectRadius: 0.04,
+          fill: { color: "E52521" },
+          line: { color: "E52521" },
+        });
+
+        slide.addText("HIGH", {
+          x: 6.02,
+          y: y + 0.07,
+          w: 0.55,
+          h: 0.1,
+          fontSize: 7,
+          bold: true,
+          align: "center",
+          color: "FFFFFF",
+        });
+
+        slide.addText(safe(item.recommended_action), {
+          x: 6.8,
+          y: y + 0.08,
+          w: 4.3,
+          h: 0.3,
+          fontSize: 10,
+        });
+      });
+
+      addFooter(slide);
+    }
+
+    // =========================
+    // SLIDE 6
+    // =========================
+    {
+      const slide = pptx.addSlide();
+
+      addTitle(
+        slide,
+        "Recommended Next Steps",
+        "Management execution priorities",
+        6
+      );
+
+      const steps = [
+        "Assign ownership for all High AP items",
+        "Validate mitigation feasibility with process owners",
+        "Track closure progress in the Excel execution register",
+        "Review recurring operational themes quarterly",
+      ];
+
+      const colors = [
+        "5B2D91",
+        "F28C28",
+        "2CA02C",
+        "1DA1F2",
+      ];
+
+      steps.forEach((step, idx) => {
+        const x = 0.7 + idx * 2.8;
+
+        slide.addShape("rect", {
+          x,
+          y: 2.0,
+          w: 2.3,
+          h: 1.6,
+          fill: { color: "FFFFFF" },
+          line: { color: "DADADA" },
+        });
+
+        slide.addShape("roundRect", {
+          x: x + 0.15,
+          y: 2.15,
+          w: 0.35,
+          h: 0.35,
+          rectRadius: 0.05,
+          fill: { color: colors[idx] },
+          line: { color: colors[idx] },
+        });
+
+        slide.addText(String(idx + 1), {
+          x: x + 0.15,
+          y: 2.2,
+          w: 0.35,
+          h: 0.1,
+          fontSize: 10,
+          bold: true,
+          align: "center",
+          color: "FFFFFF",
+        });
+
+        slide.addText(step, {
+          x: x + 0.2,
+          y: 2.7,
+          w: 1.9,
+          h: 0.6,
+          fontSize: 11,
+          color: "333333",
+          align: "center",
+        });
+      });
+
+      addFooter(slide);
+    }
+
+    // =========================
+    // SLIDE 7
+    // =========================
+    {
+      const slide = pptx.addSlide();
+
+      addTitle(
+        slide,
+        "Thank you",
+        "Management review ready",
+        7
+      );
+
+      slide.addText(
+        "Use this executive summary to guide management review discussion and mitigation prioritization.",
+        {
+          x: 1.0,
+          y: 2.0,
+          w: 9,
+          h: 0.6,
+          fontSize: 24,
+          align: "center",
+          bold: true,
+          color: "5B2D91",
         }
       );
 
       slide.addText(
         `${processName} • ${total} failure modes reviewed`,
         {
-          x: 0.8,
-          y: 5.8,
-          w: 6,
+          x: 1.0,
+          y: 3.0,
+          w: 9,
           h: 0.3,
-          fontSize: 13,
-          color: "DDDDDD",
+          fontSize: 16,
+          align: "center",
+          color: "666666",
         }
       );
+
+      addFooter(slide);
     }
 
+    // =========================
+    // EXPORT
+    // =========================
     const buffer = await pptx.write({
       outputType: "nodebuffer",
     });
@@ -587,18 +826,16 @@ export default async function handler(req, res) {
 
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="P-FMEA-Executive-Summary.pptx"`
+      `attachment; filename="P-FMEA_Executive_${processName}.pptx"`
     );
 
     return res.status(200).send(buffer);
-
-  } catch (e) {
-    console.error("PPTX EXPORT ERROR:", e);
+  } catch (err) {
+    console.error("PPTX EXPORT ERROR:", err);
 
     return res.status(500).json({
       success: false,
-      error: e.message || "PPTX export failed",
-      stage: "write-buffer",
+      error: err?.message || "PPTX export failed",
     });
   }
 }
