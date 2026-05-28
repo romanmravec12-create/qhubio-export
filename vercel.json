@@ -2,6 +2,9 @@
   "functions": {
     "api/export.js": {
       "includeFiles": "templates/**"
+    },
+    "api/export-pptx.js": {
+      "includeFiles": "templates/**"
     }
   }
 }
