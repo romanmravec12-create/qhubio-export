@@ -78,7 +78,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!parsed.success) return res.status(400).json({ error: "Invalid export request" });
   const authorization = req.headers.authorization;
   const base = env("SUPABASE_URL");
-  const anon = env("SUPABASE_ANON_KEY");
+  // Supabase renamed the browser-safe anon key to "publishable key". Support
+  // both names so existing deployments remain compatible while new projects
+  // can use the current configuration name.
+  const anon = env("SUPABASE_PUBLISHABLE_KEY") || env("SUPABASE_ANON_KEY");
   if (!authorization?.startsWith("Bearer ")) return res.status(401).json({ error: "Sign in to export this report." });
   if (!base || !anon) return res.status(503).json({ error: "The report service is not configured." });
   const headers = { apikey: anon, Authorization: authorization };
