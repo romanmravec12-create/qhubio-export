@@ -107,8 +107,15 @@ class Report {
     const lw = this.logoSize.width * scale, lh = this.logoSize.height * scale;
     doc.addImage(this.logo.bytes, this.logo.format, slot.x + (slot.w - lw) / 2, slot.y + (slot.h - lh) / 2, lw, lh, undefined, "FAST");
     const state = str(this.input.caseRow.status);
-    const status = state === "closed" ? "CLOSED" : state ? state.replace(/_/g, " ").toUpperCase() : "STATUS NOT RECORDED";
-    this.text(status, slot.x + slot.w / 2, M + 25, { size: 8, bold: true, colour: state === "closed" ? C.green : C.muted, align: "center" });
+    // A final report is exportable only after D1-D8 are approved. Some legacy
+    // rows retain `draft` after D8, so the governed discipline state is the
+    // authoritative report status rather than the stale case label.
+    const allDisciplinesApproved = ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8"].every(step =>
+      this.input.sections.some(section => str(section.step_code) === step && str(section.approval_status) === "approved"),
+    );
+    const closed = state === "closed" || allDisciplinesApproved;
+    const status = closed ? "CLOSED" : state ? state.replace(/_/g, " ").toUpperCase() : "STATUS NOT RECORDED";
+    this.text(status, slot.x + slot.w / 2, M + 25, { size: 8, bold: true, colour: closed ? C.green : C.muted, align: "center" });
     this.y = Math.max(M + 33, titleY + 1);
     if (!continued) {
       this.begin("", "Report identification");
@@ -420,12 +427,31 @@ export function buildEightDReportPdf(input: EightDReportInput): Buffer {
   r.table([{ key: "step", label: "Implementation step", weight: 3 }, { key: "owner_role", label: "Owner" }, { key: "due", label: "Due" }], d6.implementation_plan);
   r.field("Validation plan", d6.validation_plan); r.list("Evidence required", d6.evidence_required);
   r.table([{ key: "criterion", label: "Acceptance criterion", weight: 2 }, { key: "result", label: "Observed result", weight: 2 }, { key: "evidence_reference", label: "Evidence reference", weight: 1.5 }], d6.validation_results); r.end();
-  r.begin("D7", "Prevent recurrence / institutionalize learning");
-  r.list("Standardization", d7.standardization); r.list("Documents to update", d7.documents_to_update); r.list("Read-across", d7.read_across); r.field("Lessons learned", d7.lessons_learned); r.end();
   const approvalColumns = [{ key: "role", label: "Closure approval role" }, { key: "name_placeholder", label: "Approver name", weight: 2 }];
+  const listValues = (value: unknown) => {
+    const items = array(value);
+    return items.length ? items.map(item => typeof item === "string" ? item : JSON.stringify(item)) : ["None recorded"];
+  };
+  const d7Fields = [
+    ...listValues(d7.standardization),
+    ...listValues(d7.documents_to_update),
+    ...listValues(d7.read_across),
+    d7.lessons_learned,
+  ];
   const closureHeight = r.estimate([d8.closure_summary, d8.recognition], [{ columns: approvalColumns, rows: d8.approvals }], W - M * 2);
-  if (closureHeight <= 125) r.ensure(closureHeight);
-  r.begin("D8", "Closure and recognition"); r.field("Closure summary", d8.closure_summary); r.field("Recognition", d8.recognition);
-  r.table(approvalColumns, d8.approvals); r.end();
+  const d7Height = r.estimate(d7Fields, [], half);
+  const writeD7 = () => {
+    r.begin("D7", "Prevent recurrence / institutionalize learning");
+    r.list("Standardization", d7.standardization); r.list("Documents to update", d7.documents_to_update); r.list("Read-across", d7.read_across); r.field("Lessons learned", d7.lessons_learned); r.end();
+  };
+  const writeD8 = () => {
+    r.begin("D8", "Closure and recognition"); r.field("Closure summary", d8.closure_summary); r.field("Recognition", d8.recognition);
+    r.table(approvalColumns, d8.approvals); r.end();
+  };
+  // Compact D7/D8 records share the available row. This prevents a short
+  // closure block from becoming an almost-empty continuation page while long
+  // records retain the existing full-width, overflow-safe layout.
+  if (Math.max(d7Height, closureHeight) <= 125) r.pair(writeD7, writeD8, Math.max(d7Height, closureHeight));
+  else { writeD7(); if (closureHeight <= 125) r.ensure(closureHeight); writeD8(); }
   return r.finish();
 }

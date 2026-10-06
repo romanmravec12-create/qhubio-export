@@ -50,6 +50,11 @@ describe("8D portrait report", () => {
     for (const expected of ["Validation record VR-030", "WI-WH-07 and process FMEA", "Example service approver", "Stock reconciliation record SR-014", "Bin count BC-011"]) expect(text).toContain(expected);
     expect(text).toContain("CLOSED"); expect(text).not.toContain("APPROVED");
   });
+  it("marks a fully approved 8D report closed even when a legacy case row is still draft", () => {
+    const fixture = reportFixture(); fixture.caseRow.status = "draft";
+    const text = contentText(buildEightDReportPdf(fixture));
+    expect(text).toContain("CLOSED"); expect(text).not.toContain("DRAFT");
+  });
   it("excludes inactive RCA workspaces and never promotes an unverified candidate", () => {
     const fixture = reportFixture("five_why");
     const d4 = fixture.sections.find(s => s.step_code === "D4")!.content as Record<string, unknown>;
@@ -134,6 +139,13 @@ describe("authenticated 8D export API", () => {
     expect(res.pdf().subarray(0, 5).toString()).toBe("%PDF-");
     expect(res.send).not.toHaveBeenCalled(); // Streamed, not a Vercel buffered response.
     expect(res.writableFinished).toBe(true);
+  });
+  it("accepts the current Supabase publishable-key environment name", async () => {
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co"); vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "test-publishable");
+    const fetcher = backend(); vi.stubGlobal("fetch", fetcher); const res = response();
+    await handler(request() as never, res as never);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(fetcher.mock.calls[0][1].headers).toEqual({ apikey: "test-publishable", Authorization: "Bearer test-token" });
   });
   it("denies a case invisible to the caller", async () => {
     configure(); vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [] })); const res = response();
