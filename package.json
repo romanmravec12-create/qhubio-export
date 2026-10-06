@@ -1,7 +1,26 @@
 {
+  "name": "qhubio-export-service",
+  "private": true,
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
+    "@supabase/supabase-js": "2.97.0",
     "exceljs": "^4.3.0",
-    "pptxgenjs": "3.12.0"
+    "fontkit": "^2.0.4",
+    "jspdf": "4.2.1",
+    "pptxgenjs": "3.12.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.10",
+    "typescript": "5.5.4",
+    "vercel": "37.4.2",
+    "vitest": "3.2.4"
   }
 }

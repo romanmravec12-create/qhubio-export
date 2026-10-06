@@ -5,6 +5,11 @@
     },
     "api/export-pptx.js": {
       "includeFiles": "templates/**"
+    },
+    "api/export-8d-report.ts": {
+      "maxDuration": 60,
+      "memory": 1024,
+      "includeFiles": "assets/{NotoSansSC-Variable.ttf,qhubio-8d-logo.png}"
     }
   }
 }
