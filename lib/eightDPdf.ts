@@ -94,18 +94,7 @@ class Report {
     if (fill) this.doc.setFillColor(...fill);
     this.doc.roundedRect(x, y, w, h, 1.5, 1.5, fill ? "FD" : "S");
   }
-  private header(continued: boolean) {
-    const doc = this.doc;
-    doc.setFillColor(...C.purple); doc.rect(M, M, 1.4, continued ? 19 : 27, "F");
-    this.text("QUALITY INVESTIGATION / CUSTOMER COMPLAINT", M + 5, M + 4, { size: 7, bold: true, colour: C.purple });
-    this.text(continued ? "8D Report / continued" : "8D Corrective Action Report", M + 5, M + 12, { size: continued ? 17 : 20, bold: true });
-    const titleLines = this.lines(this.input.caseRow.title || "8D investigation", 184, false, 10);
-    let titleY = M + 20;
-    if (titleLines.length <= 3) { for (const line of titleLines) { this.text(line, M + 5, titleY, { size: 10, colour: C.muted }); titleY += 4.5; } }
-    const slot = { x: W - M - 69, y: M, w: 69, h: 18 };
-    const scale = Math.min(slot.w / this.logoSize.width, slot.h / this.logoSize.height);
-    const lw = this.logoSize.width * scale, lh = this.logoSize.height * scale;
-    doc.addImage(this.logo.bytes, this.logo.format, slot.x + (slot.w - lw) / 2, slot.y + (slot.h - lh) / 2, lw, lh, undefined, "FAST");
+  private reportStatus() {
     const state = str(this.input.caseRow.status);
     // A final report is exportable only after D1-D8 are approved. Some legacy
     // rows retain `draft` after D8, so the governed discipline state is the
@@ -114,8 +103,25 @@ class Report {
       this.input.sections.some(section => str(section.step_code) === step && str(section.approval_status) === "approved"),
     );
     const closed = state === "closed" || allDisciplinesApproved;
-    const status = closed ? "CLOSED" : state ? state.replace(/_/g, " ").toUpperCase() : "STATUS NOT RECORDED";
+    return { closed, status: closed ? "CLOSED" : state ? state.replace(/_/g, " ").toUpperCase() : "STATUS NOT RECORDED" };
+  }
+  private drawBrand() {
+    const slot = { x: W - M - 69, y: M, w: 69, h: 18 };
+    const scale = Math.min(slot.w / this.logoSize.width, slot.h / this.logoSize.height);
+    const lw = this.logoSize.width * scale, lh = this.logoSize.height * scale;
+    this.doc.addImage(this.logo.bytes, this.logo.format, slot.x + (slot.w - lw) / 2, slot.y + (slot.h - lh) / 2, lw, lh, undefined, "FAST");
+    const { closed, status } = this.reportStatus();
     this.text(status, slot.x + slot.w / 2, M + 25, { size: 8, bold: true, colour: closed ? C.green : C.muted, align: "center" });
+  }
+  private header(continued: boolean) {
+    const doc = this.doc;
+    doc.setFillColor(...C.purple); doc.rect(M, M, 1.4, continued ? 19 : 27, "F");
+    this.text("QUALITY INVESTIGATION / CUSTOMER COMPLAINT", M + 5, M + 4, { size: 7, bold: true, colour: C.purple });
+    this.text(continued ? "8D Report / continued" : "8D Corrective Action Report", M + 5, M + 12, { size: continued ? 17 : 20, bold: true });
+    const titleLines = this.lines(this.input.caseRow.title || "8D investigation", 184, false, 10);
+    let titleY = M + 20;
+    if (titleLines.length <= 3) { for (const line of titleLines) { this.text(line, M + 5, titleY, { size: 10, colour: C.muted }); titleY += 4.5; } }
+    this.drawBrand();
     this.y = Math.max(M + 33, titleY + 1);
     if (!continued) {
       this.begin("", "Report identification");
@@ -378,6 +384,9 @@ class Report {
       this.doc.setPage(page); this.doc.setDrawColor(...C.border); this.doc.setLineWidth(0.2); this.doc.line(M, H - 11, W - M, H - 11);
       this.text(`Qhubio / Case ${str(this.input.caseRow.id)}`, M, H - 6, { size: 7, colour: C.muted });
       this.text(`Generated ${date(new Date())} / Confidential / Page ${page} of ${total}`, W - M, H - 6, { size: 7, colour: C.muted, align: "right" });
+      // Headers are painted again as the final layer. This prevents page-one
+      // branding from being visually covered by later PDF drawing operations.
+      this.drawBrand();
     }
     return Buffer.from(this.doc.output("arraybuffer"));
   }
