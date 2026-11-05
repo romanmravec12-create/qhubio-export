@@ -5,14 +5,14 @@ type AnyRecord = Record<string, any>;
 
 const safe = (value: unknown) => String(value ?? "").replace(/[\u0000-\u001f]/g, " ").trim();
 const titleCase = (value: unknown) => safe(value).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-const gradeLabel = (grade: unknown) => grade === "na" ? "Not applicable" : grade === "not_assessed" || grade == null ? "Not assessed" : typeof grade === "number" ? `${grade}/10` : titleCase(grade);
+export const auditPdfGradeLabel = (grade: unknown) => ({ green: "Fully met", yellow: "Partially met", red: "Not met", na: "Not applicable", not_assessed: "Not assessed" } as Record<string, string>)[String(grade)] ?? (grade == null ? "Unanswered" : typeof grade === "number" ? `${grade} / 10` : titleCase(grade));
 const score = (grade: unknown) => typeof grade === "number" ? grade : grade === "green" ? 10 : grade === "yellow" ? 6 : grade === "red" ? 0 : null;
 
 export function buildAuditPdf({ audit, evidence, links, history, approvals = [], branding, mode }: { audit: AnyRecord; evidence: AnyRecord[]; links: AnyRecord[]; history: AnyRecord[]; approvals?: AnyRecord[]; branding?: { bytes: Uint8Array; format: "PNG" | "JPEG" } | null; mode: AuditPdfMode }) {
   const pdf = new jsPDF({ unit: "mm", format: "a4", compress: true });
   const document = audit.issued_snapshot ?? audit.document;
   const draft = !audit.issued_snapshot;
-  const result = evaluate(document);
+  const result = evaluateAuditForPdf(document);
   let y = 20;
   const page = () => { pdf.addPage(); y = 20; };
   const write = (value: unknown, size = 9, bold = false, indent = 0) => {
@@ -29,6 +29,7 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
   if (draft) { pdf.setTextColor(160, 35, 35); write("DRAFT — NOT ISSUED", 11, true); pdf.setTextColor(20, 25, 30); }
   write(document.name, 15, true);
   key("Audit reference", audit.id); key("Template", `${document.template?.name ?? "Audit template"} · v${document.template?.version ?? "—"}`); key("Audited organisation", document.organization); key("Site", document.site); key("Audit date", document.plannedOn); key("Lead auditor", document.auditor); key("Scope", document.scope); key("Sample / project", document.sample);
+  if (document.template?.sourceExtractionWarning === "word_elements_omitted") key("Source review note", "Some Word document elements were not interpreted during questionnaire preparation. Review the original source for coverage.");
   heading("Assessment result");
   key("Completion", `${result.coverage ?? 0}%`); key("Result", result.result); key("Score", result.score == null ? "Not calculated" : `${Number(result.score).toFixed(1)}% · band ${result.band ?? "—"}`); key("Conclusion", document.conclusion); if (document.template?.family === "supplier") key("Supplier / release decision", titleCase(document.releaseDecision));
   if (mode === "executive") {
@@ -43,7 +44,7 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
     for (const chapter of document.template?.chapters ?? []) {
       heading(chapter.name);
       for (const question of chapter.questions ?? []) {
-        const response = document.responses?.[question.id] ?? {}; write(`${question.id} · ${question.text}`, 10, true); key("Reference", question.reference); key("Assessment", gradeLabel(response.grade)); if (response.note) key("Observation / evidence examined", response.note); if (response.justification) key("Non-applicability rationale", response.justification); if (response.evidenceRefs) key("Document / sample references", response.evidenceRefs);
+        const response = document.responses?.[question.id] ?? {}; write(`${question.id} · ${question.text}`, 10, true); key("Reference", question.reference); if (question.provenance?.edited) key("Source note", "The reference relates to the original suggestion; verify it against the edited question."); key("Assessment", auditPdfGradeLabel(response.grade)); if (response.note) key("Observation / evidence examined", response.note); if (response.justification) key("Non-applicability rationale", response.justification); if (response.evidenceRefs) key("Document / sample references", response.evidenceRefs);
         const docs = evidence.filter((item) => item.question_id === question.id); if (docs.length) write(`Attached documents: ${docs.map((item) => `${item.name}${item.source_media_type ? ` (${item.source_media_type})` : ""}`).join("; ")}`, 8, false);
       }
     }
@@ -57,11 +58,28 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
   return pdf.output("arraybuffer");
 }
 
-function evaluate(document: AnyRecord) {
-  const values = (document.template?.chapters ?? []).flatMap((chapter: AnyRecord) => chapter.questions ?? []).map((q: AnyRecord) => score(document.responses?.[q.id]?.grade)).filter((value: number | null): value is number => value != null);
-  const assessed = values.length, total = (document.template?.chapters ?? []).reduce((sum: number, c: AnyRecord) => sum + (c.questions?.length ?? 0), 0);
-  const percent = total ? Math.round((assessed / total) * 100) : 0; const average = assessed ? values.reduce((sum: number, value: number) => sum + value, 0) / assessed : null; const result = average == null ? "Not evaluated" : average >= 9 ? "A" : average >= 7 ? "B" : "C";
-  return { coverage: percent, score: average == null ? null : average * 10, band: result, result };
+/** Mirrors the audit workspace evaluation contract; keep in sync with model.ts. */
+export function evaluateAuditForPdf(document: AnyRecord) {
+  const questions = (document.template?.chapters ?? []).flatMap((chapter: AnyRecord) => chapter.questions ?? []);
+  const responses = document.responses ?? {};
+  const assessed = questions.filter((q: AnyRecord) => responses[q.id]?.grade != null && !["na", "not_assessed"].includes(responses[q.id].grade));
+  const complete = questions.filter((q: AnyRecord) => {
+    const r = responses[q.id];
+    return r?.grade != null && r.grade !== "not_assessed" && (r.grade !== "na" || Boolean(r.justification?.trim()));
+  }).length;
+  let value: number | null = null;
+  if (document.template?.profile === "supplier_score" && assessed.length) {
+    const numerator = assessed.reduce((sum: number, q: AnyRecord) => sum + Number(responses[q.id].grade) * q.weight, 0);
+    const denominator = assessed.reduce((sum: number, q: AnyRecord) => sum + 10 * q.weight, 0);
+    value = numerator / denominator * 100;
+  }
+  const red = assessed.some((q: AnyRecord) => responses[q.id].grade === "red" || (typeof responses[q.id].grade === "number" && responses[q.id].grade <= 4));
+  const yellow = assessed.some((q: AnyRecord) => responses[q.id].grade === "yellow");
+  const blocked = questions.some((q: AnyRecord) => q.critical && !["green", 10, "na"].includes(responses[q.id]?.grade)) || (document.findings ?? []).some((f: AnyRecord) => f.type === "nonconformity" && f.severity === "major" && f.status !== "closed");
+  const band = value === null ? null : value >= 90 ? "A" : value >= 70 ? "B" : "C";
+  const decision = blocked ? "Decision blocked" : document.releaseDecision === "released" ? "Approved / released" : document.releaseDecision === "conditional" ? "Conditionally accepted" : document.releaseDecision === "not_released" ? "Not approved / not released" : "Decision required";
+  const result = !assessed.length ? "Not evaluated" : complete < questions.length ? "Assessment incomplete" : document.template?.profile === "supplier_score" ? `${band} — ${decision}` : red ? "Not met" : yellow ? "Partially met" : "Fully met";
+  return { coverage: questions.length ? Math.round(complete / questions.length * 100) : 0, score: value, band, result };
 }
 
 function drawRadar(pdf: jsPDF, document: AnyRecord, cx: number, cy: number, radius: number) {
@@ -70,5 +88,3 @@ function drawRadar(pdf: jsPDF, document: AnyRecord, cx: number, cy: number, radi
   pdf.setDrawColor(130); for (let i = 0; i < count; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / count; pdf.line(cx, cy, cx + Math.cos(a) * radius, cy + Math.sin(a) * radius); const label = safe(chapters[i]?.name).replace(/^\d+\.\s*/, "").slice(0, 16); pdf.setFontSize(6); pdf.text(label, cx + Math.cos(a) * (radius + 7), cy + Math.sin(a) * (radius + 7), { align: "center" }); }
   pdf.setDrawColor(23, 91, 151); pdf.setFillColor(82, 147, 204); const points = chapters.map((chapter: AnyRecord, i: number) => { const a = -Math.PI / 2 + i * 2 * Math.PI / count, r = Math.max(2, radius * value(chapter)); return [cx + Math.cos(a) * r, cy + Math.sin(a) * r] as [number, number]; }); for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; pdf.line(a[0], a[1], b[0], b[1]); pdf.circle(a[0], a[1], 1.2, "F"); }
 }
-
-
