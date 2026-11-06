@@ -7,7 +7,7 @@ const capturedPoints = vi.hoisted(() => [] as Array<[number, number]>);
 const imageFailure = vi.hoisted(() => ({ enabled: false }));
 vi.mock("jspdf", () => ({ jsPDF: class {
   size = 0;
-  setFont() {} setFontSize(size: number) { this.size = size; } setDrawColor() {} setLineWidth() {} line() {} setFillColor() {} rect() {} setTextColor() {} addPage() {} setPage() {} getImageProperties() { return { width: 100, height: 50 }; } addImage() { if (imageFailure.enabled) throw new Error("bad image"); } circle(x: number, y: number) { capturedPoints.push([x, y]); }
+  addFileToVFS() {} addFont() {} getTextWidth(text: string) { return text.length; } setFont() {} setFontSize(size: number) { this.size = size; } setDrawColor() {} setLineWidth() {} line() {} setFillColor() {} rect() {} setTextColor() {} addPage() {} setPage() {} getImageProperties() { return { width: 100, height: 50 }; } addImage() { if (imageFailure.enabled) throw new Error("bad image"); } circle(x: number, y: number) { capturedPoints.push([x, y]); }
   splitTextToSize(text: string) { return [text]; }
   text(value: string, _x: number, y: number) { captured.push(value); capturedSizes.push({ text: value, size: this.size }); capturedPositions.push({ text: value, y }); }
   getNumberOfPages() { return 1; }

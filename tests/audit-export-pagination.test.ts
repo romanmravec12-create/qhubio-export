@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const build = vi.hoisted(() => vi.fn((_input: unknown) => new Uint8Array([37, 80, 68, 70]).buffer));
 vi.mock("../lib/auditPdf", () => ({ buildAuditPdf: build, AuditReportBrandingError: class AuditReportBrandingError extends Error {} }));
 import handler from "../api/audit-export";
+import { AuditReportTextError } from "../lib/auditReportText";
 
 function response(status = 200) {
   return { statusCode: status, headers: {} as Record<string, string>, body: undefined as unknown, setHeader(name: string, value: string) { this.headers[name] = value; }, status(value: number) { this.statusCode = value; return this; }, json(value: unknown) { this.body = value; return this; }, send(value: unknown) { this.body = value; return this; }, end() { return this; } };
@@ -12,6 +13,19 @@ const request = { method: "POST", headers: { authorization: "Bearer synthetic-us
 
 describe("audit report endpoint pagination", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
+  it("returns a clear error without a partial PDF for unsupported text", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
+      if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
+      if (url.includes("audit_v2_runs?")) return json([{ id: "audit-1", revision: 1, status: "review", document: { name: "Test" } }]);
+      if (url.includes("audit_v2_report_branding?")) return json([]);
+      return json([], "*/0");
+    }));
+    build.mockImplementationOnce(() => { throw new AuditReportTextError("This report contains characters its PDF fonts cannot render. No partial report was exported."); });
+    const res = response(); await handler(request as never, res as never);
+    expect(res.statusCode).toBe(422);
+    expect(res.body).toMatchObject({ success: false, error: expect.stringContaining("fonts cannot render") });
+  });
   it("passes every evidence page to the report with the user authorization", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
@@ -97,3 +111,4 @@ describe("audit report endpoint pagination", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/storage/v1/object/"))).toBe(false);
   });
 });
+

@@ -1,14 +1,37 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/export.js": {
-      "includeFiles": "templates/**"
+    "api/export.ts": {
+      "maxDuration": 60,
+      "memory": 1024
     },
-    "api/export-pptx.js": {
-      "includeFiles": "templates/**"
+    "api/export-pptx.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "api/export-free-tool-pdf.ts": {
+      "maxDuration": 30,
+      "memory": 512
+    },
+    "api/export-8d-report.ts": {
+      "maxDuration": 60,
+      "memory": 1024,
+      "includeFiles": "assets/{NotoSans-Regular.ttf,NotoSans-Bold.ttf,NotoSansSC-Report-Regular.ttf,qhubio-8d-logo.png}"
     },
     "api/audit-export.ts": {
       "maxDuration": 60,
-      "memory": 1024
+      "memory": 1024,
+      "includeFiles": "assets/{NotoSans-Regular.ttf,NotoSans-Bold.ttf,NotoSansSC-Report-Regular.ttf}"
+    },
+    "api/audit-export/executive.ts": {
+      "maxDuration": 60,
+      "memory": 1024,
+      "includeFiles": "assets/{NotoSans-Regular.ttf,NotoSans-Bold.ttf,NotoSansSC-Report-Regular.ttf}"
+    },
+    "api/audit-export/detailed.ts": {
+      "maxDuration": 60,
+      "memory": 1024,
+      "includeFiles": "assets/{NotoSans-Regular.ttf,NotoSans-Bold.ttf,NotoSansSC-Report-Regular.ttf}"
     },
     "api/audit-portfolio-export.ts": {
       "maxDuration": 60,
@@ -27,3 +50,4 @@
     }
   ]
 }
+

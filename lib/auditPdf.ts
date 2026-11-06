@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { AuditReportText } from "./auditReportText";
 
 export type AuditPdfMode = "executive" | "detailed";
 export class AuditReportBrandingError extends Error {}
@@ -11,16 +12,16 @@ const score = (grade: unknown) => typeof grade === "number" ? grade : grade === 
 
 export function buildAuditPdf({ audit, evidence, links, history, approvals = [], branding, mode }: { audit: AnyRecord; evidence: AnyRecord[]; links: AnyRecord[]; history: AnyRecord[]; approvals?: AnyRecord[]; branding?: { bytes: Uint8Array; format: "PNG" | "JPEG" } | null; mode: AuditPdfMode }) {
   const pdf = new jsPDF({ unit: "mm", format: "a4", compress: true });
+  const reportText = new AuditReportText(pdf);
   const document = audit.issued_snapshot ?? audit.document;
   const draft = !audit.issued_snapshot;
   const result = evaluateAuditForPdf(document);
   let y = 20;
-  const watermark = () => { if (draft) { pdf.setTextColor(232, 232, 232); pdf.setFont("helvetica", "bold"); pdf.setFontSize(28); pdf.text("DRAFT — NOT ISSUED", 105, 155, { align: "center", angle: 35 }); pdf.setTextColor(20, 25, 30); } };
+  const watermark = () => { if (draft) { pdf.setTextColor(232, 232, 232); pdf.setFont("AuditReport", "bold"); pdf.setFontSize(28); pdf.text("DRAFT — NOT ISSUED", 105, 155, { align: "center", angle: 35 }); pdf.setTextColor(20, 25, 30); } };
   const page = () => { pdf.addPage(); y = 20; watermark(); };
   const write = (value: unknown, size = 9, bold = false, indent = 0) => {
     const text = safe(value) || "—";
-    pdf.setFont("helvetica", bold ? "bold" : "normal"); pdf.setFontSize(size);
-    for (const line of pdf.splitTextToSize(text, 174 - indent)) { if (y > 276) { page(); pdf.setFont("helvetica", bold ? "bold" : "normal"); pdf.setFontSize(size); } pdf.text(line, 18 + indent, y); y += size * 0.48 + 1.8; }
+    for (const line of reportText.lines(text, 174 - indent, size, bold)) { if (y > 276) page(); reportText.draw(line, 18 + indent, y, size, bold); y += size * 0.48 + 1.8; }
   };
   const heading = (value: string, level = 14) => { if (y > 260) page(); y += 3; pdf.setDrawColor(32, 66, 104); pdf.setLineWidth(.45); pdf.line(18, y, 192, y); y += 6; write(value, level, true); };
   const key = (label: string, value: unknown) => write(`${label}: ${safe(value) || "—"}`, 9, false);
@@ -32,7 +33,7 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
     key("Root cause", finding.rootCause); key("Action status", titleCase(finding.status)); key("Corrective action", finding.action);
     key("Implementation", finding.implementation); key("Effectiveness", finding.effectiveness); key("Verified by", finding.verifiedBy); key("Verified on", finding.verifiedOn);
   };
-  const header = () => { pdf.setFillColor(21, 55, 91); pdf.rect(0, 0, 210, 13, "F"); pdf.setTextColor(255, 255, 255); pdf.setFont("helvetica", "bold"); pdf.setFontSize(10); pdf.text("QHUBIO · AUDIT", 18, 8); pdf.setTextColor(20, 25, 30); };
+  const header = () => { pdf.setFillColor(21, 55, 91); pdf.rect(0, 0, 210, 13, "F"); pdf.setTextColor(255, 255, 255); pdf.setFont("AuditReport", "bold"); pdf.setFontSize(10); pdf.text("QHUBIO · AUDIT", 18, 8); pdf.setTextColor(20, 25, 30); };
   header();
   watermark();
   if (branding) {
@@ -89,7 +90,7 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
     heading("CAPA and audit history"); if (links.length) for (const link of links) { write(`CAPA ID: ${safe(link.capa_id) || "—"}`, 9, true); key("Related finding ID", link.finding_id); key("Linked at", link.linked_at); } else write("No CAPA links recorded."); if (history.length) { y += 2; for (const event of history) write(`${event.created_at || ""} · ${titleCase(event.event)} · revision ${event.revision ?? "—"} · actor ID ${event.actor_id || "—"}`, 8); }
     heading("Controlled electronic sign-off"); if (approvals.length) for (const approval of approvals) { write(`${approval.created_at || ""} · ${titleCase(approval.event)} · ${approval.meaning || "Controlled sign-off event"}`, 8); key("Actor ID", approval.actor_id); key("Document SHA-256", approval.document_hash); } else write("No controlled electronic sign-off has been recorded for this audit.");
   }
-  const pages = pdf.getNumberOfPages(); for (let i = 1; i <= pages; i++) { pdf.setPage(i); pdf.setDrawColor(190); pdf.line(18, 286, 192, 286); pdf.setFontSize(8); pdf.setTextColor(80); pdf.text(`Qhubio audit record · ${audit.id} · ${i} / ${pages}`, 18, 291); }
+  const pages = pdf.getNumberOfPages(); for (let i = 1; i <= pages; i++) { pdf.setPage(i); pdf.setDrawColor(190); pdf.line(18, 286, 192, 286); pdf.setFont("AuditReport", "normal"); pdf.setFontSize(8); pdf.setTextColor(80); pdf.text(`Qhubio audit record · ${audit.id} · ${i} / ${pages}`, 18, 291); }
   return pdf.output("arraybuffer");
 }
 

@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { AuditReportBrandingError, buildAuditPdf, type AuditPdfMode } from "../lib/auditPdf";
 import { AuditReportDataError, auditReportRows } from "../lib/auditReportRows";
+import { AuditReportTextError } from "../lib/auditReportText";
 
 const origin = "https://qhubio.com";
 // This is the browser-safe publishable key, not a service-role secret. Every
@@ -59,5 +60,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const finalAudit = Array.isArray(finalAuditRows) ? finalAuditRows[0] : undefined;
     if (!Number.isSafeInteger(audit.revision) || !finalAudit || finalAudit.revision !== audit.revision || finalAudit.status !== audit.status) return json(res, 409, "The audit changed during export. Please export again.");
     const name = String(audit.document?.name ?? "audit").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase(); res.setHeader("Content-Type", "application/pdf"); res.setHeader("Content-Disposition", `attachment; filename=\"${name}-${format}.pdf\"`); res.setHeader("Content-Length", String(buffer.byteLength)); return res.status(200).send(Buffer.from(buffer));
-  } catch (error) { console.error("[audit-export] failed", error); return json(res, error instanceof AuditReportBrandingError ? 422 : 500, error instanceof AuditReportDataError || error instanceof AuditReportBrandingError ? error.message : "Audit report generation failed. Please try again."); }
+  } catch (error) { console.error("[audit-export] failed", error); return json(res, error instanceof AuditReportBrandingError || error instanceof AuditReportTextError ? 422 : 500, error instanceof AuditReportDataError || error instanceof AuditReportBrandingError || error instanceof AuditReportTextError ? error.message : "Audit report generation failed. Please try again."); }
 }
+
