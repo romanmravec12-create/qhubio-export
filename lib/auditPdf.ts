@@ -14,16 +14,26 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
   const draft = !audit.issued_snapshot;
   const result = evaluateAuditForPdf(document);
   let y = 20;
-  const page = () => { pdf.addPage(); y = 20; };
+  const watermark = () => { if (draft) { pdf.setTextColor(232, 232, 232); pdf.setFont("helvetica", "bold"); pdf.setFontSize(28); pdf.text("DRAFT — NOT ISSUED", 105, 155, { align: "center", angle: 35 }); pdf.setTextColor(20, 25, 30); } };
+  const page = () => { pdf.addPage(); y = 20; watermark(); };
   const write = (value: unknown, size = 9, bold = false, indent = 0) => {
     const text = safe(value) || "—";
     pdf.setFont("helvetica", bold ? "bold" : "normal"); pdf.setFontSize(size);
-    for (const line of pdf.splitTextToSize(text, 174 - indent)) { if (y > 276) page(); pdf.text(line, 18 + indent, y); y += size * 0.48 + 1.8; }
+    for (const line of pdf.splitTextToSize(text, 174 - indent)) { if (y > 276) { page(); pdf.setFont("helvetica", bold ? "bold" : "normal"); pdf.setFontSize(size); } pdf.text(line, 18 + indent, y); y += size * 0.48 + 1.8; }
   };
   const heading = (value: string, level = 14) => { if (y > 260) page(); y += 3; pdf.setDrawColor(32, 66, 104); pdf.setLineWidth(.45); pdf.line(18, y, 192, y); y += 6; write(value, level, true); };
   const key = (label: string, value: unknown) => write(`${label}: ${safe(value) || "—"}`, 9, false);
+  const findingDetails = (finding: AnyRecord) => {
+    write(`${titleCase(finding.severity)} ${titleCase(finding.type)} · ${finding.title}`, 10, true);
+    key("Finding ID", finding.id); key("Related question ID", finding.questionId); key("Finding date", finding.createdOn);
+    key("Evidence", finding.evidence); key("Owner", finding.owner); key("Containment due", finding.containmentDue);
+    key("Action plan due", finding.planDue); key("Implementation due", finding.due); key("Containment", finding.containment);
+    key("Root cause", finding.rootCause); key("Action status", titleCase(finding.status)); key("Corrective action", finding.action);
+    key("Implementation", finding.implementation); key("Effectiveness", finding.effectiveness); key("Verified by", finding.verifiedBy); key("Verified on", finding.verifiedOn);
+  };
   const header = () => { pdf.setFillColor(21, 55, 91); pdf.rect(0, 0, 210, 13, "F"); pdf.setTextColor(255, 255, 255); pdf.setFont("helvetica", "bold"); pdf.setFontSize(10); pdf.text("QHUBIO · AUDIT", 18, 8); pdf.setTextColor(20, 25, 30); };
   header();
+  watermark();
   if (branding) { try { pdf.addImage(branding.bytes, branding.format, 146, 18, 44, 18, undefined, "FAST"); } catch { /* branding is optional, never fail an audit record because of it */ } }
   write(mode === "executive" ? "Audit Executive Summary" : "Detailed Audit Report", 19, true);
   if (draft) { pdf.setTextColor(160, 35, 35); write("DRAFT — NOT ISSUED", 11, true); pdf.setTextColor(20, 25, 30); }
@@ -33,6 +43,7 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
   heading("Assessment result");
   key("Completion", `${result.coverage ?? 0}%`); key("Result", result.result); key("Score", result.score == null ? "Not calculated" : `${Number(result.score).toFixed(1)}% · band ${result.band ?? "—"}`); key("Conclusion", document.conclusion); if (document.template?.family === "supplier") key("Supplier / release decision", titleCase(document.releaseDecision));
   if (mode === "executive") {
+    if (y > 190) page();
     heading("Chapter performance"); drawRadar(pdf, document, 105, y + 35, 30); y += 70;
     heading("Key findings");
     const open = (document.findings ?? []).filter((f: AnyRecord) => f.status !== "closed");
@@ -45,17 +56,23 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
     for (const chapter of document.template?.chapters ?? []) {
       heading(chapter.name);
       for (const question of chapter.questions ?? []) {
-        const response = document.responses?.[question.id] ?? {}; write(`Question ${++questionNumber} · ${question.text}`, 10, true); key("Question ID", question.id); key("Reference", question.reference); if (question.guidance) key("Auditor guidance", question.guidance); if (question.provenance?.label) key("Source", question.provenance.label); if (question.provenance?.rationale) key("Source rationale", question.provenance.rationale); if (question.provenance?.edited) key("Source note", "The reference relates to the original suggestion; verify it against the edited question."); key("Assessment", auditPdfGradeLabel(response.grade)); if (response.note) key("Observation / evidence examined", response.note); if (response.justification) key("Non-applicability rationale", response.justification); if (response.evidenceRefs) key("Document / sample references", response.evidenceRefs);
+        const response = document.responses?.[question.id] ?? {};
+        if (y > 245) page();
+        write(`Question ${++questionNumber} · ${question.text}`, 10, true); key("Question ID", question.id); key("Reference", question.reference);
+        if (typeof question.required === "boolean") key("Required", question.required ? "Yes" : "No");
+        if (typeof question.critical === "boolean") key("Critical control", question.critical ? "Yes" : "No");
+        if (typeof question.weight === "number") key("Weight", question.weight);
+        if (question.guidance) key("Auditor guidance", question.guidance); if (question.provenance?.label) key("Source", question.provenance.label); if (question.provenance?.rationale) key("Source rationale", question.provenance.rationale); if (question.provenance?.edited) key("Source note", "The reference relates to the original suggestion; verify it against the edited question."); key("Assessment", auditPdfGradeLabel(response.grade)); if (response.note) key("Observation / evidence examined", response.note); if (response.justification) key("Non-applicability rationale", response.justification); if (response.evidenceRefs) key("Document / sample references", response.evidenceRefs);
         const docs = evidence.filter((item) => item.question_id === question.id); if (docs.length) write(`Attached documents: ${docs.map((item) => `${item.name}${item.source_media_type ? ` (${item.source_media_type})` : ""}`).join("; ")}`, 8, false);
       }
     }
     heading(audit.issued_snapshot ? "Findings at issue" : "Draft findings");
-    for (const finding of document.findings ?? []) { write(`${titleCase(finding.severity)} ${titleCase(finding.type)} · ${finding.title}`, 10, true); key("Finding ID", finding.id); key("Related question ID", finding.questionId); key("Finding date", finding.createdOn); key("Evidence", finding.evidence); key("Owner", finding.owner); key("Containment due", finding.containmentDue); key("Action plan due", finding.planDue); key("Implementation due", finding.due); key("Containment", finding.containment); key("Root cause", finding.rootCause); key("Action status", titleCase(finding.status)); key("Corrective action", finding.action); key("Implementation", finding.implementation); key("Effectiveness", finding.effectiveness); key("Verified by", finding.verifiedBy); key("Verified on", finding.verifiedOn); }
-    if (audit.issued_snapshot) { heading("Current follow-up after issue"); for (const finding of audit.document?.findings ?? []) { write(`${finding.title} · ${titleCase(finding.status)}`, 10, true); key("Current implementation", finding.implementation); key("Verification", `${finding.effectiveness || "Pending"} · ${finding.verifiedBy || "—"} ${finding.verifiedOn || ""}`); } }
-    heading("CAPA and audit history"); if (links.length) for (const link of links) write(`${link.capa_code || "CAPA"} · ${link.capa_title || "Linked corrective action"} · ${titleCase(link.capa_status)}`); else write("No CAPA links recorded."); if (history.length) { y += 2; for (const event of history.slice(0, 30)) write(`${event.created_at || ""} · ${titleCase(event.event)} · revision ${event.revision ?? "—"}`, 8); }
+    for (const finding of document.findings ?? []) findingDetails(finding);
+    if (audit.issued_snapshot) { heading("Current follow-up after issue"); for (const finding of audit.document?.findings ?? []) findingDetails(finding); }
+    heading("CAPA and audit history"); if (links.length) for (const link of links) write(`${link.capa_code || "CAPA"} · ${link.capa_title || "Linked corrective action"} · ${titleCase(link.capa_status)}`); else write("No CAPA links recorded."); if (history.length) { y += 2; for (const event of history) write(`${event.created_at || ""} · ${titleCase(event.event)} · revision ${event.revision ?? "—"}`, 8); }
     heading("Controlled electronic sign-off"); if (approvals.length) for (const approval of approvals) write(`${approval.created_at || ""} · ${titleCase(approval.event)} · ${approval.meaning || "Controlled sign-off event"} · document SHA-256 ${String(approval.document_hash || "—").slice(0, 16)}…`, 8); else write("No controlled electronic sign-off has been recorded for this audit.");
   }
-  const pages = pdf.getNumberOfPages(); for (let i = 1; i <= pages; i++) { pdf.setPage(i); if (draft) { pdf.setTextColor(232, 232, 232); pdf.setFont("helvetica", "bold"); pdf.setFontSize(28); pdf.text("DRAFT — NOT ISSUED", 105, 155, { align: "center", angle: 35 }); } pdf.setDrawColor(190); pdf.line(18, 286, 192, 286); pdf.setFontSize(8); pdf.setTextColor(80); pdf.text(`Qhubio audit record · ${audit.id} · ${i} / ${pages}`, 18, 291); }
+  const pages = pdf.getNumberOfPages(); for (let i = 1; i <= pages; i++) { pdf.setPage(i); pdf.setDrawColor(190); pdf.line(18, 286, 192, 286); pdf.setFontSize(8); pdf.setTextColor(80); pdf.text(`Qhubio audit record · ${audit.id} · ${i} / ${pages}`, 18, 291); }
   return pdf.output("arraybuffer");
 }
 
