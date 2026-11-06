@@ -53,6 +53,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const branding = (await brandingRows.json() as Array<{ logo_path?: string; logo_media_type?: string }>)?.[0]; let logo: { bytes: Uint8Array; format: "PNG" | "JPEG" } | null = decodeTemporaryLogo(temporaryLogo);
     if (!logo && !useQhubioBranding && branding?.logo_path) { const file = await fetch(`${supabaseUrl}/storage/v1/object/authenticated/audit-v2-report-branding/${branding.logo_path}`, { headers: { apikey: supabasePublishableKey, Authorization: authorization } }); if (file.ok) logo = { bytes: new Uint8Array(await file.arrayBuffer()), format: branding.logo_media_type === "image/png" ? "PNG" : "JPEG" }; }
     const buffer = buildAuditPdf({ audit, evidence, links, history, approvals, branding: logo, mode: format }); if (buffer.byteLength > 4 * 1024 * 1024) return json(res, 413, "This report is too large to export safely. Reduce the report scope and try again.");
+    const finalAuditResponse = await rest(`audit_v2_runs?select=revision,status&id=eq.${encodeURIComponent(auditId)}&organization_id=eq.${encodeURIComponent(organizationId)}`);
+    if (!finalAuditResponse.ok) return json(res, 502, "The audit could not be rechecked. Please export again.");
+    const finalAuditRows = await finalAuditResponse.json() as Array<{ revision?: number; status?: string }>;
+    const finalAudit = Array.isArray(finalAuditRows) ? finalAuditRows[0] : undefined;
+    if (!Number.isSafeInteger(audit.revision) || !finalAudit || finalAudit.revision !== audit.revision || finalAudit.status !== audit.status) return json(res, 409, "The audit changed during export. Please export again.");
     const name = String(audit.document?.name ?? "audit").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase(); res.setHeader("Content-Type", "application/pdf"); res.setHeader("Content-Disposition", `attachment; filename=\"${name}-${format}.pdf\"`); res.setHeader("Content-Length", String(buffer.byteLength)); return res.status(200).send(Buffer.from(buffer));
   } catch (error) { console.error("[audit-export] failed", error); return json(res, 500, error instanceof AuditReportDataError ? error.message : "Audit report generation failed. Please try again."); }
 }
