@@ -21,10 +21,19 @@ describe("detailed audit report", () => {
     const chapters = ["Planning", "Execution", "Monitoring", "Improvement"].map((name, i) => ({ name, questions: [{ id: `q${i}` }] }));
     const document = { name: "Audit", template: { chapters }, responses: {}, findings: [] };
     buildAuditPdf({ audit: { id: "audit", document }, evidence: [], links: [], history: [], mode: "executive" });
-    const label = capturedPositions.find((item) => item.text === "Monitoring");
-    const caption = capturedPositions.find((item) => item.text.startsWith("Chart uses the unweighted"));
+    const label = capturedPositions.find((item) => item.text === "3");
+    const caption = capturedPositions.find((item) => item.text.startsWith("Chapter values use the unweighted"));
     expect(label).toBeDefined(); expect(caption).toBeDefined();
     expect(caption!.y - label!.y).toBeGreaterThanOrEqual(8);
+  });
+  it("preserves distinct full chapter names and avoids an overcrowded chart", () => {
+    captured.length = 0; capturedPoints.length = 0;
+    const chapters = Array.from({ length: 12 }, (_, i) => ({ name: `Important process chapter ${i + 1}`, questions: [{ id: `q${i}` }] }));
+    const document = { name: "Audit", template: { chapters }, responses: { q0: { grade: "red" } }, findings: [] };
+    buildAuditPdf({ audit: { id: "audit", document }, evidence: [], links: [], history: [], mode: "executive" });
+    expect(capturedPoints).toHaveLength(0);
+    expect(captured.join("\n")).toContain("[1] Important process chapter 1: 0%");
+    expect(captured.join("\n")).toContain("[12] Important process chapter 12: No assessed answers");
   });
   it("distinguishes unassessed chapters from zero and explains the executive chart", () => {
     const chapter = { name: "Controls", questions: [{ id: "a" }, { id: "b" }, { id: "c" }] };
@@ -35,7 +44,7 @@ describe("detailed audit report", () => {
     const document = { name: "Audit", template: { chapters: [chapter] }, responses: {}, findings: [] };
     buildAuditPdf({ audit: { id: "audit", document, issued_snapshot: null }, evidence: [], links: [], history: [], mode: "executive" });
     expect(capturedPoints).toHaveLength(0);
-    expect(captured.join(" ")).toContain("Chapters without assessed answers have no plotted point.");
+    expect(captured.join(" ")).toContain("Chapters without assessed answers have no value or plotted point.");
     document.responses = { a: { grade: "red" } };
     buildAuditPdf({ audit: { id: "audit", document, issued_snapshot: null }, evidence: [], links: [], history: [], mode: "executive" });
     expect(capturedPoints).toHaveLength(1);

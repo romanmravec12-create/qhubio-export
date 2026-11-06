@@ -52,9 +52,16 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
   heading("Assessment result");
   key("Completion", `${result.coverage ?? 0}%`); key("Result", result.result); key("Score", result.score == null ? "Not calculated" : `${Number(result.score).toFixed(1)}% · band ${result.band ?? "—"}`); key("Conclusion", document.conclusion); if (document.template?.family === "supplier") key("Supplier / release decision", titleCase(document.releaseDecision));
   if (mode === "executive") {
-    if (y > 190) page();
-    heading("Chapter performance"); drawRadar(pdf, document, 105, y + 35, 30); y += 84;
-    write("Chart uses the unweighted average of assessed answers: fully met = 10, partially met = 6, not met = 0; numeric grades use their value out of 10. Not applicable and unanswered questions are excluded. Chapters without assessed answers have no plotted point.", 8);
+    const chapters = document.template?.chapters ?? [];
+    // Keep a typical chart, explanation and legend together when possible.
+    if (chapters.length > 0 && chapters.length <= 8 && y + 113 + chapters.length * 8 > 276) page();
+    heading("Chapter performance");
+    if (chapters.length > 0 && chapters.length <= 8) { drawRadar(pdf, document, 105, y + 35, 30); y += 84; }
+    else if (chapters.length > 8) write("Chapter results are listed below; a chart is omitted to keep the report readable.", 8);
+    if (chapters.length) {
+      write("Chapter values use the unweighted average of assessed answers: fully met = 10, partially met = 6, not met = 0; numeric grades use their value out of 10. Not applicable and unanswered questions are excluded. Chapters without assessed answers have no value or plotted point.", 8);
+      chapters.forEach((chapter: AnyRecord, index: number) => { const value = auditRadarChapterValue(chapter, document.responses ?? {}); key(`[${index + 1}] ${safe(chapter.name) || "Untitled chapter"}`, value === null ? "No assessed answers" : `${Math.round(value * 100)}%`); });
+    } else write("No chapters recorded.");
     heading("Key findings");
     const open = (document.findings ?? []).filter((f: AnyRecord) => f.status !== "closed");
     if (!open.length) write("No open findings recorded.");
@@ -118,7 +125,7 @@ export function auditRadarChapterValue(chapter: AnyRecord, responses: AnyRecord)
 function drawRadar(pdf: jsPDF, document: AnyRecord, cx: number, cy: number, radius: number) {
   const chapters = document.template?.chapters ?? []; const count = Math.max(chapters.length, 3);
   for (let ring = 1; ring <= 4; ring++) { const r = radius * ring / 4; pdf.setDrawColor(210); for (let i = 0; i < count; i++) { const angle = -Math.PI / 2 + i * 2 * Math.PI / count; const next = -Math.PI / 2 + (i + 1) * 2 * Math.PI / count; pdf.line(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r, cx + Math.cos(next) * r, cy + Math.sin(next) * r); } }
-  pdf.setDrawColor(130); for (let i = 0; i < count; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / count; pdf.line(cx, cy, cx + Math.cos(a) * radius, cy + Math.sin(a) * radius); const label = safe(chapters[i]?.name).replace(/^\d+\.\s*/, "").slice(0, 16); pdf.setFontSize(6); pdf.text(label, cx + Math.cos(a) * (radius + 7), cy + Math.sin(a) * (radius + 7), { align: "center" }); }
+  pdf.setDrawColor(130); for (let i = 0; i < count; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / count; pdf.line(cx, cy, cx + Math.cos(a) * radius, cy + Math.sin(a) * radius); const label = i < chapters.length ? String(i + 1) : ""; pdf.setFontSize(7); pdf.text(label, cx + Math.cos(a) * (radius + 7), cy + Math.sin(a) * (radius + 7), { align: "center" }); }
   pdf.setDrawColor(23, 91, 151); pdf.setFillColor(82, 147, 204); const points = chapters.map((chapter: AnyRecord, i: number) => { const value = auditRadarChapterValue(chapter, document.responses ?? {}); if (value === null) return null; const a = -Math.PI / 2 + i * 2 * Math.PI / count, r = radius * value; return [cx + Math.cos(a) * r, cy + Math.sin(a) * r] as [number, number]; }); for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; if (!a) continue; if (b && points.length > 1) pdf.line(a[0], a[1], b[0], b[1]); pdf.circle(a[0], a[1], 1.2, "F"); }
 }
 
