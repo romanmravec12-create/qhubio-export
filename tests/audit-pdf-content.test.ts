@@ -31,8 +31,10 @@ describe("detailed audit report", () => {
     captured.length = 0;
     const snapshot = { name: "Audit", template: { chapters: [] }, responses: {}, findings: [{ id: "finding", title: "Finding", rootCause: "Original root cause", action: "Original action" }] };
     const current = { ...snapshot, findings: [{ ...snapshot.findings[0], rootCause: "Updated root cause", action: "Updated action", containment: "Updated containment" }] };
-    const history = Array.from({ length: 35 }, (_, index) => ({ event: `event_${index}`, revision: index }));
-    buildAuditPdf({ audit: { id: "audit", issued_snapshot: snapshot, document: current }, evidence: [], links: [], history, mode: "detailed" });
+    const history = Array.from({ length: 35 }, (_, index) => ({ event: `event_${index}`, revision: index, actor_id: "history-actor" }));
+    const links = [{ capa_id: "capa-123", finding_id: "finding", linked_at: "2026-11-06" }];
+    const approvals = [{ event: "ISSUED", meaning: "Approved", actor_id: "approval-actor", document_hash: "a".repeat(64) }];
+    buildAuditPdf({ audit: { id: "audit", issued_snapshot: snapshot, document: current }, evidence: [], links, history, approvals, mode: "detailed" });
     const text = captured.join("\n");
     expect(text).not.toContain("DRAFT — NOT ISSUED");
     expect(text.indexOf("Findings at issue")).toBeLessThan(text.indexOf("Original root cause"));
@@ -41,6 +43,11 @@ describe("detailed audit report", () => {
     expect(text).toContain("Updated action");
     expect(text).toContain("Updated containment");
     expect(text).toContain("Event 34");
+    expect(text).toContain("history-actor");
+    expect(text).toContain("CAPA ID: capa-123");
+    expect(text).toContain("Related finding ID: finding");
+    expect(text).toContain("approval-actor");
+    expect(text).toContain("a".repeat(64));
   });
 
   it("restores body font size when a draft history entry flows to a new page", () => {
