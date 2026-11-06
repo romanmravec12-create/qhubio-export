@@ -21,6 +21,23 @@ describe("detailed audit report", () => {
     };
     buildAuditPdf({ audit: { id: "audit-1", document, issued_snapshot: null }, evidence: [], links: [], history: [], mode: "detailed" });
     const text = captured.join("\n");
+    expect(captured.indexOf("DRAFT — NOT ISSUED")).toBeLessThan(captured.indexOf("Detailed Audit Report"));
     for (const value of ["Second auditor", "Annual review", "Check log", "process.txt", "Source excerpt", "Observation", "Record 42", "Finding ID: f1", "Related question ID: q1", "2026-11-06", "Log missing", "Owner", "2026-11-09", "2026-11-27", "2027-02-04", "Hold material", "No owner", "Assign owner", "Assigned", "Verified", "Verifier", "2026-12-01"]) expect(text).toContain(value);
+  });
+
+  it("keeps issued findings distinct from complete current follow-up and includes all supplied history", () => {
+    captured.length = 0;
+    const snapshot = { name: "Audit", template: { chapters: [] }, responses: {}, findings: [{ id: "finding", title: "Finding", rootCause: "Original root cause", action: "Original action" }] };
+    const current = { ...snapshot, findings: [{ ...snapshot.findings[0], rootCause: "Updated root cause", action: "Updated action", containment: "Updated containment" }] };
+    const history = Array.from({ length: 35 }, (_, index) => ({ event: `event_${index}`, revision: index }));
+    buildAuditPdf({ audit: { id: "audit", issued_snapshot: snapshot, document: current }, evidence: [], links: [], history, mode: "detailed" });
+    const text = captured.join("\n");
+    expect(text).not.toContain("DRAFT — NOT ISSUED");
+    expect(text.indexOf("Findings at issue")).toBeLessThan(text.indexOf("Original root cause"));
+    expect(text.indexOf("Original root cause")).toBeLessThan(text.indexOf("Current follow-up after issue"));
+    expect(text.indexOf("Current follow-up after issue")).toBeLessThan(text.indexOf("Updated root cause"));
+    expect(text).toContain("Updated action");
+    expect(text).toContain("Updated containment");
+    expect(text).toContain("Event 34");
   });
 });
