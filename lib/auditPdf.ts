@@ -53,7 +53,7 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
   key("Completion", `${result.coverage ?? 0}%`); key("Result", result.result); key("Score", result.score == null ? "Not calculated" : `${Number(result.score).toFixed(1)}% · band ${result.band ?? "—"}`); key("Conclusion", document.conclusion); if (document.template?.family === "supplier") key("Supplier / release decision", titleCase(document.releaseDecision));
   if (mode === "executive") {
     if (y > 190) page();
-    heading("Chapter performance"); drawRadar(pdf, document, 105, y + 35, 30); y += 70;
+    heading("Chapter performance"); drawRadar(pdf, document, 105, y + 35, 30); y += 84;
     write("Chart uses the unweighted average of assessed answers: fully met = 10, partially met = 6, not met = 0; numeric grades use their value out of 10. Not applicable and unanswered questions are excluded. Chapters without assessed answers have no plotted point.", 8);
     heading("Key findings");
     const open = (document.findings ?? []).filter((f: AnyRecord) => f.status !== "closed");

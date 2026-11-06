@@ -2,19 +2,30 @@ import { describe, expect, it, vi } from "vitest";
 
 const captured = vi.hoisted(() => [] as string[]);
 const capturedSizes = vi.hoisted(() => [] as Array<{ text: string; size: number }>);
+const capturedPositions = vi.hoisted(() => [] as Array<{ text: string; y: number }>);
 const capturedPoints = vi.hoisted(() => [] as Array<[number, number]>);
 const imageFailure = vi.hoisted(() => ({ enabled: false }));
 vi.mock("jspdf", () => ({ jsPDF: class {
   size = 0;
   setFont() {} setFontSize(size: number) { this.size = size; } setDrawColor() {} setLineWidth() {} line() {} setFillColor() {} rect() {} setTextColor() {} addPage() {} setPage() {} getImageProperties() { return { width: 100, height: 50 }; } addImage() { if (imageFailure.enabled) throw new Error("bad image"); } circle(x: number, y: number) { capturedPoints.push([x, y]); }
   splitTextToSize(text: string) { return [text]; }
-  text(value: string) { captured.push(value); capturedSizes.push({ text: value, size: this.size }); }
+  text(value: string, _x: number, y: number) { captured.push(value); capturedSizes.push({ text: value, size: this.size }); capturedPositions.push({ text: value, y }); }
   getNumberOfPages() { return 1; }
   output() { return new ArrayBuffer(1); }
 } }));
 import { auditRadarChapterValue, AuditReportBrandingError, buildAuditPdf } from "../lib/auditPdf";
 
 describe("detailed audit report", () => {
+  it("leaves space between the bottom radar label and its explanatory caption", () => {
+    capturedPositions.length = 0;
+    const chapters = ["Planning", "Execution", "Monitoring", "Improvement"].map((name, i) => ({ name, questions: [{ id: `q${i}` }] }));
+    const document = { name: "Audit", template: { chapters }, responses: {}, findings: [] };
+    buildAuditPdf({ audit: { id: "audit", document }, evidence: [], links: [], history: [], mode: "executive" });
+    const label = capturedPositions.find((item) => item.text === "Monitoring");
+    const caption = capturedPositions.find((item) => item.text.startsWith("Chart uses the unweighted"));
+    expect(label).toBeDefined(); expect(caption).toBeDefined();
+    expect(caption!.y - label!.y).toBeGreaterThanOrEqual(8);
+  });
   it("distinguishes unassessed chapters from zero and explains the executive chart", () => {
     const chapter = { name: "Controls", questions: [{ id: "a" }, { id: "b" }, { id: "c" }] };
     expect(auditRadarChapterValue(chapter, { a: { grade: "na" }, b: { grade: "not_assessed" } })).toBeNull();
