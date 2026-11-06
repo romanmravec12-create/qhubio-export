@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 const captured = vi.hoisted(() => [] as string[]);
+const capturedSizes = vi.hoisted(() => [] as Array<{ text: string; size: number }>);
 vi.mock("jspdf", () => ({ jsPDF: class {
-  setFont() {} setFontSize() {} setDrawColor() {} setLineWidth() {} line() {} setFillColor() {} rect() {} setTextColor() {} addPage() {} setPage() {} addImage() {} circle() {}
+  size = 0;
+  setFont() {} setFontSize(size: number) { this.size = size; } setDrawColor() {} setLineWidth() {} line() {} setFillColor() {} rect() {} setTextColor() {} addPage() {} setPage() {} addImage() {} circle() {}
   splitTextToSize(text: string) { return [text]; }
-  text(value: string) { captured.push(value); }
+  text(value: string) { captured.push(value); capturedSizes.push({ text: value, size: this.size }); }
   getNumberOfPages() { return 1; }
   output() { return new ArrayBuffer(1); }
 } }));
@@ -39,5 +41,15 @@ describe("detailed audit report", () => {
     expect(text).toContain("Updated action");
     expect(text).toContain("Updated containment");
     expect(text).toContain("Event 34");
+  });
+
+  it("restores body font size when a draft history entry flows to a new page", () => {
+    captured.length = 0; capturedSizes.length = 0;
+    const document = { name: "Audit", template: { chapters: [] }, responses: {}, findings: [] };
+    const history = Array.from({ length: 90 }, (_, index) => ({ event: `event_${index}`, revision: index }));
+    buildAuditPdf({ audit: { id: "audit", issued_snapshot: null, document }, evidence: [], links: [], history, mode: "detailed" });
+    const entries = capturedSizes.filter((entry) => entry.text.includes("Event "));
+    expect(entries).toHaveLength(90);
+    expect(entries.every((entry) => entry.size === 8)).toBe(true);
   });
 });
