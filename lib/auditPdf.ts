@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 
 export type AuditPdfMode = "executive" | "detailed";
+export class AuditReportBrandingError extends Error {}
 type AnyRecord = Record<string, any>;
 
 const safe = (value: unknown) => String(value ?? "").replace(/[\u0000-\u001f]/g, " ").trim();
@@ -34,7 +35,15 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
   const header = () => { pdf.setFillColor(21, 55, 91); pdf.rect(0, 0, 210, 13, "F"); pdf.setTextColor(255, 255, 255); pdf.setFont("helvetica", "bold"); pdf.setFontSize(10); pdf.text("QHUBIO · AUDIT", 18, 8); pdf.setTextColor(20, 25, 30); };
   header();
   watermark();
-  if (branding) { try { pdf.addImage(branding.bytes, branding.format, 146, 18, 44, 18, undefined, "FAST"); } catch { /* branding is optional, never fail an audit record because of it */ } }
+  if (branding) {
+    try {
+      const { width, height } = pdf.getImageProperties(branding.bytes);
+      if (!width || !height) throw new Error("Invalid image dimensions");
+      const scale = Math.min(44 / width, 18 / height);
+      const logoWidth = width * scale, logoHeight = height * scale;
+      pdf.addImage(branding.bytes, branding.format, 146 + (44 - logoWidth) / 2, 18 + (18 - logoHeight) / 2, logoWidth, logoHeight, undefined, "FAST");
+    } catch { throw new AuditReportBrandingError("The selected company logo could not be rendered. Choose another logo and export again."); }
+  }
   write(mode === "executive" ? "Audit Executive Summary" : "Detailed Audit Report", 19, true);
   if (draft) { pdf.setTextColor(160, 35, 35); write("DRAFT — NOT ISSUED", 11, true); pdf.setTextColor(20, 25, 30); }
   write(document.name, 15, true);
