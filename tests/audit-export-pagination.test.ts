@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const build = vi.hoisted(() => vi.fn((_input: unknown) => new Uint8Array([37, 80, 68, 70]).buffer));
-vi.mock("../lib/auditPdf", () => ({ buildAuditPdf: build }));
+vi.mock("../lib/auditPdf", () => ({ buildAuditPdf: build, AuditReportBrandingError: class AuditReportBrandingError extends Error {} }));
 import handler from "../api/audit-export";
 
 function response(status = 200) {
@@ -63,5 +63,37 @@ describe("audit report endpoint pagination", () => {
     await handler(request as never, res as never);
     expect(res.statusCode).toBe(409);
     expect(res.body).toMatchObject({ error: expect.stringContaining("changed during export") });
+  });
+
+  it("does not silently omit an unavailable saved company logo", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
+      if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
+      if (url.includes("audit_v2_runs?")) return json([{ id: "audit-1", revision: 1, status: "review", document: { name: "Test" } }]);
+      if (url.includes("audit_v2_report_branding?")) return json([{ logo_path: "org/logo", logo_media_type: "image/png" }]);
+      if (url.includes("/storage/v1/object/")) return json({}, undefined, 403);
+      return json([], "*/0");
+    }));
+    const res = response();
+    await handler(request as never, res as never);
+    expect(res.statusCode).toBe(422);
+    expect(res.body).toMatchObject({ error: expect.stringContaining("logo could not be loaded") });
+    expect(build).not.toHaveBeenCalled();
+  });
+
+  it("allows an explicit Qhubio-branding export without loading the saved logo", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
+      if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
+      if (url.includes("audit_v2_runs?")) return json([{ id: "audit-1", revision: 1, status: "review", document: { name: "Test" } }]);
+      if (url.includes("audit_v2_report_branding?")) return json([{ logo_path: "org/logo", logo_media_type: "image/png" }]);
+      if (url.includes("/storage/v1/object/")) throw new Error("Unexpected logo download");
+      return json([], "*/0");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const res = response();
+    await handler({ ...request, body: { ...request.body, useQhubioBranding: true } } as never, res as never);
+    expect(res.statusCode).toBe(200);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/storage/v1/object/"))).toBe(false);
   });
 });
