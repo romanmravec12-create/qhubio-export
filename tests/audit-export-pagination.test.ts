@@ -18,6 +18,8 @@ describe("audit report endpoint pagination", () => {
       if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
       if (url.includes("audit_v2_runs?")) return json([{ id: "audit-1", document: { name: "Test" } }]);
       if (url.includes("audit_v2_report_branding?")) return json([]);
+      if (url.includes("audit_v2_events?")) expect(url).toContain("select=id,created_at,actor_id,event,revision&");
+      if (url.includes("audit_v2_capa_links?")) expect(url).toContain("select=id,capa_id,finding_id,linked_at&");
       const headers = init?.headers as Record<string, string>;
       expect(headers.Authorization).toBe("Bearer synthetic-user-token");
       expect(headers.Prefer).toBe("count=exact");
