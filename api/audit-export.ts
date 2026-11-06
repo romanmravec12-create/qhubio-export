@@ -1,5 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { buildAuditPdf, type AuditPdfMode } from "../lib/auditPdf";
+import { AuditReportBrandingError, buildAuditPdf, type AuditPdfMode } from "../lib/auditPdf";
+import { AuditReportDataError, auditReportRows } from "../lib/auditReportRows";
+import { AuditReportTextError } from "../lib/auditReportText";
 
 const origin = "https://qhubio.com";
 // This is the browser-safe publishable key, not a service-role secret. Every
@@ -46,12 +48,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const auditResponse = await rest(`audit_v2_runs?select=*&id=eq.${encodeURIComponent(auditId)}&organization_id=eq.${encodeURIComponent(organizationId)}`);
     if (!auditResponse.ok) return json(res, 502, "The audit record could not be retrieved.");
     const auditRows = await auditResponse.json() as Array<Record<string, any>>; const audit = auditRows?.[0]; if (!audit) return json(res, 404, "Audit not found.");
-    const [evidence, links, history, approvals, brandingRows] = await Promise.all([rest(`audit_v2_evidence?select=*&audit_id=eq.${encodeURIComponent(auditId)}`), rest(`audit_v2_capa_links?select=*&audit_id=eq.${encodeURIComponent(auditId)}`), rest(`audit_v2_events?select=*&audit_id=eq.${encodeURIComponent(auditId)}&order=created_at.desc`), rest(`audit_v2_approval_events?select=*&audit_id=eq.${encodeURIComponent(auditId)}&order=created_at.asc`), rest(`audit_v2_report_branding?select=*&organization_id=eq.${encodeURIComponent(organizationId)}`)]);
+    const allRows = (table: string, fields: string, order: string) => auditReportRows((from, to) => fetch(`${supabaseUrl}/rest/v1/${table}?select=${fields}&audit_id=eq.${encodeURIComponent(auditId)}&order=${order}`, { headers: { apikey: supabasePublishableKey, Authorization: authorization, "Range-Unit": "items", Range: `${from}-${to}`, Prefer: "count=exact" } }));
+    const [evidence, links, history, approvals, brandingRows] = await Promise.all([allRows("audit_v2_evidence", "id,question_id,name,source_media_type", "id.asc"), allRows("audit_v2_capa_links", "id,capa_id,finding_id,linked_at", "id.asc"), allRows("audit_v2_events", "id,created_at,actor_id,event,revision", "created_at.desc,id.desc"), allRows("audit_v2_approval_events", "id,created_at,actor_id,event,meaning,document_hash", "created_at.asc,id.asc"), rest(`audit_v2_report_branding?select=logo_path,logo_media_type&organization_id=eq.${encodeURIComponent(organizationId)}`)]);
+    if (!brandingRows.ok) throw new Error("Report branding could not be retrieved.");
     const branding = (await brandingRows.json() as Array<{ logo_path?: string; logo_media_type?: string }>)?.[0]; let logo: { bytes: Uint8Array; format: "PNG" | "JPEG" } | null = decodeTemporaryLogo(temporaryLogo);
-    if (!logo && !useQhubioBranding && branding?.logo_path) { const file = await fetch(`${supabaseUrl}/storage/v1/object/authenticated/audit-v2-report-branding/${branding.logo_path}`, { headers: { apikey: supabasePublishableKey, Authorization: authorization } }); if (file.ok) logo = { bytes: new Uint8Array(await file.arrayBuffer()), format: branding.logo_media_type === "image/png" ? "PNG" : "JPEG" }; }
-    const buffer = buildAuditPdf({ audit, evidence: await evidence.json() as Array<Record<string, unknown>>, links: await links.json() as Array<Record<string, unknown>>, history: await history.json() as Array<Record<string, unknown>>, approvals: await approvals.json() as Array<Record<string, unknown>>, branding: logo, mode: format }); if (buffer.byteLength > 4 * 1024 * 1024) return json(res, 413, "This report is too large to export safely. Reduce the report scope and try again.");
+    if (!logo && !useQhubioBranding && branding?.logo_path) { const file = await fetch(`${supabaseUrl}/storage/v1/object/authenticated/audit-v2-report-branding/${branding.logo_path}`, { headers: { apikey: supabasePublishableKey, Authorization: authorization } }); if (!file.ok) throw new AuditReportBrandingError("The saved company logo could not be loaded. Try again or choose another logo."); logo = { bytes: new Uint8Array(await file.arrayBuffer()), format: branding.logo_media_type === "image/png" ? "PNG" : "JPEG" }; }
+    const buffer = buildAuditPdf({ audit, evidence, links, history, approvals, branding: logo, mode: format }); if (buffer.byteLength > 4 * 1024 * 1024) return json(res, 413, "This report is too large to export safely. Reduce the report scope and try again.");
+    const finalAuditResponse = await rest(`audit_v2_runs?select=revision,status&id=eq.${encodeURIComponent(auditId)}&organization_id=eq.${encodeURIComponent(organizationId)}`);
+    if (!finalAuditResponse.ok) return json(res, 502, "The audit could not be rechecked. Please export again.");
+    const finalAuditRows = await finalAuditResponse.json() as Array<{ revision?: number; status?: string }>;
+    const finalAudit = Array.isArray(finalAuditRows) ? finalAuditRows[0] : undefined;
+    if (!Number.isSafeInteger(audit.revision) || !finalAudit || finalAudit.revision !== audit.revision || finalAudit.status !== audit.status) return json(res, 409, "The audit changed during export. Please export again.");
     const name = String(audit.document?.name ?? "audit").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase(); res.setHeader("Content-Type", "application/pdf"); res.setHeader("Content-Disposition", `attachment; filename=\"${name}-${format}.pdf\"`); res.setHeader("Content-Length", String(buffer.byteLength)); return res.status(200).send(Buffer.from(buffer));
-  } catch (error) { console.error("[audit-export] failed", error); return json(res, 500, "Audit report generation failed. Please try again."); }
+  } catch (error) { console.error("[audit-export] failed", error); return json(res, error instanceof AuditReportBrandingError || error instanceof AuditReportTextError ? 422 : 500, error instanceof AuditReportDataError || error instanceof AuditReportBrandingError || error instanceof AuditReportTextError ? error.message : "Audit report generation failed. Please try again."); }
 }
-
 

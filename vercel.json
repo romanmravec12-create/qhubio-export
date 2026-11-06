@@ -8,13 +8,19 @@
     },
     "api/audit-export.ts": {
       "maxDuration": 60,
-      "memory": 1024
+      "memory": 1024,
+      "includeFiles": "assets/{NotoSans-Regular.ttf,NotoSans-Bold.ttf,NotoSansSC-Report-Regular.ttf}"
     },
     "api/audit-portfolio-export.ts": {
       "maxDuration": 60,
       "memory": 1024
     }
   },
+  "redirects": [
+    { "source": "/lib/:path*", "destination": "/api/__internal_file_not_found", "permanent": false },
+    { "source": "/tests/:path*", "destination": "/api/__internal_file_not_found", "permanent": false },
+    { "source": "/assets/:path*", "destination": "/api/__internal_file_not_found", "permanent": false }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",
