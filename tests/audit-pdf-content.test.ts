@@ -2,18 +2,34 @@ import { describe, expect, it, vi } from "vitest";
 
 const captured = vi.hoisted(() => [] as string[]);
 const capturedSizes = vi.hoisted(() => [] as Array<{ text: string; size: number }>);
+const capturedPoints = vi.hoisted(() => [] as Array<[number, number]>);
 const imageFailure = vi.hoisted(() => ({ enabled: false }));
 vi.mock("jspdf", () => ({ jsPDF: class {
   size = 0;
-  setFont() {} setFontSize(size: number) { this.size = size; } setDrawColor() {} setLineWidth() {} line() {} setFillColor() {} rect() {} setTextColor() {} addPage() {} setPage() {} getImageProperties() { return { width: 100, height: 50 }; } addImage() { if (imageFailure.enabled) throw new Error("bad image"); } circle() {}
+  setFont() {} setFontSize(size: number) { this.size = size; } setDrawColor() {} setLineWidth() {} line() {} setFillColor() {} rect() {} setTextColor() {} addPage() {} setPage() {} getImageProperties() { return { width: 100, height: 50 }; } addImage() { if (imageFailure.enabled) throw new Error("bad image"); } circle(x: number, y: number) { capturedPoints.push([x, y]); }
   splitTextToSize(text: string) { return [text]; }
   text(value: string) { captured.push(value); capturedSizes.push({ text: value, size: this.size }); }
   getNumberOfPages() { return 1; }
   output() { return new ArrayBuffer(1); }
 } }));
-import { AuditReportBrandingError, buildAuditPdf } from "../lib/auditPdf";
+import { auditRadarChapterValue, AuditReportBrandingError, buildAuditPdf } from "../lib/auditPdf";
 
 describe("detailed audit report", () => {
+  it("distinguishes unassessed chapters from zero and explains the executive chart", () => {
+    const chapter = { name: "Controls", questions: [{ id: "a" }, { id: "b" }, { id: "c" }] };
+    expect(auditRadarChapterValue(chapter, { a: { grade: "na" }, b: { grade: "not_assessed" } })).toBeNull();
+    expect(auditRadarChapterValue(chapter, { a: { grade: "red" }, b: { grade: "na" } })).toBe(0);
+    expect(auditRadarChapterValue(chapter, { a: { grade: "green" }, b: { grade: "yellow" }, c: { grade: "na" } })).toBe(0.8);
+    captured.length = 0; capturedPoints.length = 0;
+    const document = { name: "Audit", template: { chapters: [chapter] }, responses: {}, findings: [] };
+    buildAuditPdf({ audit: { id: "audit", document, issued_snapshot: null }, evidence: [], links: [], history: [], mode: "executive" });
+    expect(capturedPoints).toHaveLength(0);
+    expect(captured.join(" ")).toContain("Chapters without assessed answers have no plotted point.");
+    document.responses = { a: { grade: "red" } };
+    buildAuditPdf({ audit: { id: "audit", document, issued_snapshot: null }, evidence: [], links: [], history: [], mode: "executive" });
+    expect(capturedPoints).toHaveLength(1);
+    expect(capturedPoints[0][0]).toBe(105);
+  });
   it("includes audit context, source context and all submitted finding details", () => {
     captured.length = 0;
     const document = {
@@ -68,3 +84,4 @@ describe("detailed audit report", () => {
     } finally { imageFailure.enabled = false; }
   });
 });
+

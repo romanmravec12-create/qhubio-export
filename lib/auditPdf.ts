@@ -54,6 +54,7 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
   if (mode === "executive") {
     if (y > 190) page();
     heading("Chapter performance"); drawRadar(pdf, document, 105, y + 35, 30); y += 70;
+    write("Chart uses the unweighted average of assessed answers: fully met = 10, partially met = 6, not met = 0; numeric grades use their value out of 10. Not applicable and unanswered questions are excluded. Chapters without assessed answers have no plotted point.", 8);
     heading("Key findings");
     const open = (document.findings ?? []).filter((f: AnyRecord) => f.status !== "closed");
     if (!open.length) write("No open findings recorded.");
@@ -109,9 +110,15 @@ export function evaluateAuditForPdf(document: AnyRecord) {
   return { coverage: questions.length ? Math.round(complete / questions.length * 100) : 0, score: value, band, result };
 }
 
+export function auditRadarChapterValue(chapter: AnyRecord, responses: AnyRecord): number | null {
+  const scores = (chapter.questions ?? []).map((q: AnyRecord) => score(responses[q.id]?.grade)).filter((x: number | null): x is number => x != null);
+  return scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / (scores.length * 10) : null;
+}
+
 function drawRadar(pdf: jsPDF, document: AnyRecord, cx: number, cy: number, radius: number) {
-  const chapters = document.template?.chapters ?? []; const count = Math.max(chapters.length, 3); const value = (chapter: AnyRecord) => { const scores = (chapter.questions ?? []).map((q: AnyRecord) => score(document.responses?.[q.id]?.grade)).filter((x: number | null): x is number => x != null); return scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / (scores.length * 10) : 0; };
+  const chapters = document.template?.chapters ?? []; const count = Math.max(chapters.length, 3);
   for (let ring = 1; ring <= 4; ring++) { const r = radius * ring / 4; pdf.setDrawColor(210); for (let i = 0; i < count; i++) { const angle = -Math.PI / 2 + i * 2 * Math.PI / count; const next = -Math.PI / 2 + (i + 1) * 2 * Math.PI / count; pdf.line(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r, cx + Math.cos(next) * r, cy + Math.sin(next) * r); } }
   pdf.setDrawColor(130); for (let i = 0; i < count; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / count; pdf.line(cx, cy, cx + Math.cos(a) * radius, cy + Math.sin(a) * radius); const label = safe(chapters[i]?.name).replace(/^\d+\.\s*/, "").slice(0, 16); pdf.setFontSize(6); pdf.text(label, cx + Math.cos(a) * (radius + 7), cy + Math.sin(a) * (radius + 7), { align: "center" }); }
-  pdf.setDrawColor(23, 91, 151); pdf.setFillColor(82, 147, 204); const points = chapters.map((chapter: AnyRecord, i: number) => { const a = -Math.PI / 2 + i * 2 * Math.PI / count, r = Math.max(2, radius * value(chapter)); return [cx + Math.cos(a) * r, cy + Math.sin(a) * r] as [number, number]; }); for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; pdf.line(a[0], a[1], b[0], b[1]); pdf.circle(a[0], a[1], 1.2, "F"); }
+  pdf.setDrawColor(23, 91, 151); pdf.setFillColor(82, 147, 204); const points = chapters.map((chapter: AnyRecord, i: number) => { const value = auditRadarChapterValue(chapter, document.responses ?? {}); if (value === null) return null; const a = -Math.PI / 2 + i * 2 * Math.PI / count, r = radius * value; return [cx + Math.cos(a) * r, cy + Math.sin(a) * r] as [number, number]; }); for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; if (!a) continue; if (b && points.length > 1) pdf.line(a[0], a[1], b[0], b[1]); pdf.circle(a[0], a[1], 1.2, "F"); }
 }
+
