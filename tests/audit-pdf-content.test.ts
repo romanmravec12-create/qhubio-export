@@ -2,15 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 
 const captured = vi.hoisted(() => [] as string[]);
 const capturedSizes = vi.hoisted(() => [] as Array<{ text: string; size: number }>);
+const imageFailure = vi.hoisted(() => ({ enabled: false }));
 vi.mock("jspdf", () => ({ jsPDF: class {
   size = 0;
-  setFont() {} setFontSize(size: number) { this.size = size; } setDrawColor() {} setLineWidth() {} line() {} setFillColor() {} rect() {} setTextColor() {} addPage() {} setPage() {} addImage() {} circle() {}
+  setFont() {} setFontSize(size: number) { this.size = size; } setDrawColor() {} setLineWidth() {} line() {} setFillColor() {} rect() {} setTextColor() {} addPage() {} setPage() {} getImageProperties() { return { width: 100, height: 50 }; } addImage() { if (imageFailure.enabled) throw new Error("bad image"); } circle() {}
   splitTextToSize(text: string) { return [text]; }
   text(value: string) { captured.push(value); capturedSizes.push({ text: value, size: this.size }); }
   getNumberOfPages() { return 1; }
   output() { return new ArrayBuffer(1); }
 } }));
-import { buildAuditPdf } from "../lib/auditPdf";
+import { AuditReportBrandingError, buildAuditPdf } from "../lib/auditPdf";
 
 describe("detailed audit report", () => {
   it("includes audit context, source context and all submitted finding details", () => {
@@ -58,5 +59,12 @@ describe("detailed audit report", () => {
     const entries = capturedSizes.filter((entry) => entry.text.includes("Event "));
     expect(entries).toHaveLength(90);
     expect(entries.every((entry) => entry.size === 8)).toBe(true);
+  });
+
+  it("does not silently omit a logo that cannot be decoded", () => {
+    imageFailure.enabled = true;
+    try {
+      expect(() => buildAuditPdf({ audit: { id: "audit", issued_snapshot: null, document: { template: { chapters: [] }, responses: {}, findings: [] } }, evidence: [], links: [], history: [], branding: { bytes: new Uint8Array([1]), format: "PNG" }, mode: "detailed" })).toThrow(AuditReportBrandingError);
+    } finally { imageFailure.enabled = false; }
   });
 });
