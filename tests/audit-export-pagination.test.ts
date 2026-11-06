@@ -16,7 +16,7 @@ describe("audit report endpoint pagination", () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
       if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
-      if (url.includes("audit_v2_runs?")) return json([{ id: "audit-1", document: { name: "Test" } }]);
+      if (url.includes("audit_v2_runs?")) return json([{ id: "audit-1", revision: 1, status: "review", document: { name: "Test" } }]);
       if (url.includes("audit_v2_report_branding?")) return json([]);
       if (url.includes("audit_v2_events?")) expect(url).toContain("select=id,created_at,actor_id,event,revision&");
       if (url.includes("audit_v2_capa_links?")) expect(url).toContain("select=id,capa_id,finding_id,linked_at&");
@@ -48,5 +48,20 @@ describe("audit report endpoint pagination", () => {
     expect(res.statusCode).toBe(500);
     expect(build).not.toHaveBeenCalled();
     expect(res.body).toMatchObject({ error: expect.stringContaining("completeness") });
+  });
+
+  it("does not deliver a report if the audit changes during export", async () => {
+    let auditReads = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
+      if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
+      if (url.includes("audit_v2_runs?")) return json([{ id: "audit-1", revision: ++auditReads, status: "review", document: { name: "Test" } }]);
+      if (url.includes("audit_v2_report_branding?")) return json([]);
+      return json([], "*/0");
+    }));
+    const res = response();
+    await handler(request as never, res as never);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ error: expect.stringContaining("changed during export") });
   });
 });
