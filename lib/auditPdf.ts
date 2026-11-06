@@ -41,10 +41,11 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
     heading("Management attention"); key("Open findings", open.length); key("Overdue findings", open.filter((f: AnyRecord) => f.due && f.due < new Date().toISOString().slice(0, 10)).length); key("CAPA links", links.length); key("Issued status", audit.issued_snapshot ? "Issued assessment snapshot" : "Working audit record");
   } else {
     heading("Scoring policy"); write("Scores and responses are reproduced from the active audit template. Not applicable responses are excluded from the calculated score. The audit conclusion remains an auditor judgement, not a certificate or automatic release authorization.");
+    let questionNumber = 0;
     for (const chapter of document.template?.chapters ?? []) {
       heading(chapter.name);
       for (const question of chapter.questions ?? []) {
-        const response = document.responses?.[question.id] ?? {}; write(`${question.id} · ${question.text}`, 10, true); key("Reference", question.reference); if (question.provenance?.edited) key("Source note", "The reference relates to the original suggestion; verify it against the edited question."); key("Assessment", auditPdfGradeLabel(response.grade)); if (response.note) key("Observation / evidence examined", response.note); if (response.justification) key("Non-applicability rationale", response.justification); if (response.evidenceRefs) key("Document / sample references", response.evidenceRefs);
+        const response = document.responses?.[question.id] ?? {}; write(`Question ${++questionNumber} · ${question.text}`, 10, true); key("Question ID", question.id); key("Reference", question.reference); if (question.provenance?.edited) key("Source note", "The reference relates to the original suggestion; verify it against the edited question."); key("Assessment", auditPdfGradeLabel(response.grade)); if (response.note) key("Observation / evidence examined", response.note); if (response.justification) key("Non-applicability rationale", response.justification); if (response.evidenceRefs) key("Document / sample references", response.evidenceRefs);
         const docs = evidence.filter((item) => item.question_id === question.id); if (docs.length) write(`Attached documents: ${docs.map((item) => `${item.name}${item.source_media_type ? ` (${item.source_media_type})` : ""}`).join("; ")}`, 8, false);
       }
     }
@@ -88,3 +89,4 @@ function drawRadar(pdf: jsPDF, document: AnyRecord, cx: number, cy: number, radi
   pdf.setDrawColor(130); for (let i = 0; i < count; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / count; pdf.line(cx, cy, cx + Math.cos(a) * radius, cy + Math.sin(a) * radius); const label = safe(chapters[i]?.name).replace(/^\d+\.\s*/, "").slice(0, 16); pdf.setFontSize(6); pdf.text(label, cx + Math.cos(a) * (radius + 7), cy + Math.sin(a) * (radius + 7), { align: "center" }); }
   pdf.setDrawColor(23, 91, 151); pdf.setFillColor(82, 147, 204); const points = chapters.map((chapter: AnyRecord, i: number) => { const a = -Math.PI / 2 + i * 2 * Math.PI / count, r = Math.max(2, radius * value(chapter)); return [cx + Math.cos(a) * r, cy + Math.sin(a) * r] as [number, number]; }); for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; pdf.line(a[0], a[1], b[0], b[1]); pdf.circle(a[0], a[1], 1.2, "F"); }
 }
+
