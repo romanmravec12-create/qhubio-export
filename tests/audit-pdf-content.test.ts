@@ -16,6 +16,26 @@ vi.mock("jspdf", () => ({ jsPDF: class {
 import { auditRadarChapterValue, AuditReportBrandingError, buildAuditPdf } from "../lib/auditPdf";
 
 describe("detailed audit report", () => {
+  it("prints the applicable source limitations in both report formats", () => {
+    const cases = [
+      ["word_elements_omitted", true, false, false],
+      ["spreadsheet_formula_results_unavailable", false, true, false],
+      ["word_and_spreadsheet_incomplete", true, true, false],
+      ["pdf_pages_without_text", false, false, true],
+      ["pdf_and_word_incomplete", true, false, true],
+      ["pdf_and_spreadsheet_incomplete", false, true, true],
+      ["pdf_word_and_spreadsheet_incomplete", true, true, true],
+    ] as const;
+    for (const [warning, word, spreadsheet, pdf] of cases) for (const mode of ["executive", "detailed"] as const) {
+      captured.length = 0;
+      const document = { name: "Audit", template: { sourceExtractionWarning: warning, chapters: [] }, responses: {}, findings: [] };
+      buildAuditPdf({ audit: { id: "audit", document, issued_snapshot: null }, evidence: [], links: [], history: [], mode });
+      const text = captured.join(" ");
+      expect(text.includes("Some Word document elements")).toBe(word);
+      expect(text.includes("Some spreadsheet formulas")).toBe(spreadsheet);
+      expect(text.includes("Some PDF pages had no extractable text")).toBe(pdf);
+    }
+  });
   it("leaves space between the bottom radar label and its explanatory caption", () => {
     capturedPositions.length = 0;
     const chapters = ["Planning", "Execution", "Monitoring", "Improvement"].map((name, i) => ({ name, questions: [{ id: `q${i}` }] }));
