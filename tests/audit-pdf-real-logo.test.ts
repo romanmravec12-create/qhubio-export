@@ -50,6 +50,20 @@ describe("real report logo rendering", () => {
     }
   });
 
+  it("renders the immutable issued snapshot's warning instead of a later draft", async () => {
+    const issued = { ...document, template: { chapters: [], sourceExtractionWarning: "pdf_pages_without_text" } };
+    const current = { ...document, template: { chapters: [] } };
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    for (const mode of ["executive", "detailed"] as const) {
+      const bytes = buildAuditPdf({ ...request, mode, audit: { id: "audit", document: current, issued_snapshot: issued } });
+      const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+      const pdf = await task.promise; const pages: string[] = [];
+      for (let i = 1; i <= pdf.numPages; i++) pages.push((await (await pdf.getPage(i)).getTextContent()).items.map((item) => "str" in item ? item.str : "").join(" "));
+      expect(pages.join(" ")).toContain("Some PDF pages had no extractable text");
+      await task.destroy();
+    }
+  });
+
   it("rejects unsupported characters instead of silently corrupting the report", () => {
     expect(() => buildAuditPdf({ ...request, audit: { ...request.audit, document: { ...document, name: "Audit 😀" } } })).toThrow(AuditReportTextError);
   });

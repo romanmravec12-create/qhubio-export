@@ -13,6 +13,19 @@ const request = { method: "POST", headers: { authorization: "Bearer synthetic-us
 
 describe("audit report endpoint pagination", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
+  it("passes source warnings from the issued audit snapshot through to the PDF renderer", async () => {
+    const snapshot = { name: "Issued QA audit", template: { sourceExtractionWarning: "pdf_word_and_spreadsheet_incomplete", chapters: [] } };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
+      if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
+      if (url.includes("audit_v2_runs?")) return json([{ id: "audit-1", revision: 1, status: "issued", document: { name: "Current" }, issued_snapshot: snapshot }]);
+      if (url.includes("audit_v2_report_branding?")) return json([]);
+      return json([], "*/0");
+    }));
+    const res = response(); await handler(request as never, res as never);
+    expect(res.statusCode).toBe(200);
+    expect(build).toHaveBeenCalledWith(expect.objectContaining({ audit: expect.objectContaining({ issued_snapshot: snapshot }) }));
+  });
   it("returns a clear error without a partial PDF for unsupported text", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
