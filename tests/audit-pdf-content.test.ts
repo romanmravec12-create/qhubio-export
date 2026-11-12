@@ -84,6 +84,16 @@ describe("detailed audit report", () => {
     for (const value of ["Second auditor", "Annual review", "Check log", "process.txt", "Source excerpt", "Observation", "Record 42", "Finding ID: f1", "Related question ID: q1", "2026-11-06", "Log missing", "Owner", "2026-11-09", "2026-11-27", "2027-02-04", "Hold material", "No owner", "Assign owner", "Assigned", "Verified", "Verifier", "2026-12-01"]) expect(text).toContain(value);
   });
 
+  it("preserves presentation and other extraction warnings in both report types", () => {
+    for (const mode of ["executive", "detailed"] as const) {
+      captured.length = 0;
+      const document = { name: "Audit", template: { chapters: [], presentationSlidesWithoutText: true, sourceExtractionWarning: "pdf_pages_without_text" }, responses: {}, findings: [] };
+      buildAuditPdf({ audit: { id: "audit", document, issued_snapshot: null }, evidence: [], links: [], history: [], mode });
+      expect(captured.join(" ")).toContain("Some presentation slides had no extractable text");
+      expect(captured.join(" ")).toContain("Some PDF pages had no extractable text");
+    }
+  });
+
   it("keeps issued findings distinct from complete current follow-up and includes all supplied history", () => {
     captured.length = 0;
     const snapshot = { name: "Audit", template: { chapters: [] }, responses: {}, findings: [{ id: "finding", title: "Finding", rootCause: "Original root cause", action: "Original action" }] };
@@ -124,4 +134,3 @@ describe("detailed audit report", () => {
     } finally { imageFailure.enabled = false; }
   });
 });
-
