@@ -13,6 +13,39 @@ const request = { method: "POST", headers: { authorization: "Bearer synthetic-us
 
 describe("audit report endpoint pagination", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
+  it("does not fetch related data or render a foreign audit", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer synthetic-user-token");
+      if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
+      if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
+      if (url.includes("audit_v2_runs?")) {
+        expect(url).toContain("id=eq.foreign-audit");
+        expect(url).toContain("organization_id=eq.org-1");
+        return json([]); // The user's organization has no access to this audit.
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const res = response();
+    await handler({ ...request, body: { ...request.body, auditId: "foreign-audit" } } as never, res as never);
+    expect(res.statusCode).toBe(404);
+    expect(build).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not deliver a report if audit access disappears during export", async () => {
+    let auditReads = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
+      if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
+      if (url.includes("audit_v2_runs?")) return json(++auditReads === 1 ? [{ id: "audit-1", revision: 1, status: "review", document: { name: "Test" } }] : []);
+      if (url.includes("audit_v2_report_branding?")) return json([]);
+      return json([], "*/0");
+    }));
+    const res = response(); await handler(request as never, res as never);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ success: false });
+  });
   it("passes source warnings from the issued audit snapshot through to the PDF renderer", async () => {
     const snapshot = { name: "Issued QA audit", template: { sourceExtractionWarning: "pdf_word_and_spreadsheet_incomplete", chapters: [] } };
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
@@ -124,4 +157,3 @@ describe("audit report endpoint pagination", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/storage/v1/object/"))).toBe(false);
   });
 });
-
