@@ -59,6 +59,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const finalAuditRows = await finalAuditResponse.json() as Array<{ revision?: number; status?: string }>;
     const finalAudit = Array.isArray(finalAuditRows) ? finalAuditRows[0] : undefined;
     if (!Number.isSafeInteger(audit.revision) || !finalAudit || finalAudit.revision !== audit.revision || finalAudit.status !== audit.status) return json(res, 409, "The audit changed during export. Please export again.");
+    // Evidence rows can be added without changing the audit revision. Recheck
+    // the same ordered, caller-authorized fields rather than silently returning
+    // a report that omits an attachment added while the PDF was built.
+    const finalEvidence = await allRows("audit_v2_evidence", "id,question_id,name,source_media_type", "id.asc");
+    if (JSON.stringify(finalEvidence) !== JSON.stringify(evidence)) return json(res, 409, "The audit evidence changed during export. Please export again.");
     const name = String(audit.document?.name ?? "audit").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase(); res.setHeader("Content-Type", "application/pdf"); res.setHeader("Content-Disposition", `attachment; filename=\"${name}-${format}.pdf\"`); res.setHeader("Content-Length", String(buffer.byteLength)); return res.status(200).send(Buffer.from(buffer));
   } catch (error) { console.error("[audit-export] failed", error); return json(res, error instanceof AuditReportBrandingError || error instanceof AuditReportTextError ? 422 : 500, error instanceof AuditReportDataError || error instanceof AuditReportBrandingError || error instanceof AuditReportTextError ? error.message : "Audit report generation failed. Please try again."); }
 }

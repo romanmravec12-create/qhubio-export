@@ -125,6 +125,27 @@ describe("audit report endpoint pagination", () => {
     expect(res.body).toMatchObject({ error: expect.stringContaining("changed during export") });
   });
 
+  it.each(["added", "changed"])("does not deliver a report if evidence is %s during export", async (change) => {
+    let reads = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
+      if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
+      if (url.includes("audit_v2_runs?")) return json([{ id: "audit-1", revision: 1, status: "review", document: { name: "Test" } }]);
+      if (url.includes("audit_v2_report_branding?")) return json([]);
+      if (url.includes("audit_v2_evidence?")) {
+        const first = [{ id: "e1", question_id: "q1", name: "file.pdf", source_media_type: "application/pdf" }];
+        if (++reads === 1) return json(first, "0-0/1");
+        return change === "added" ? json([...first, { id: "e2", question_id: "q1", name: "new.pdf", source_media_type: "application/pdf" }], "0-1/2")
+          : json([{ ...first[0], name: "changed.pdf" }], "0-0/1");
+      }
+      return json([], "*/0");
+    }));
+    const res = response();
+    await handler(request as never, res as never);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ error: expect.stringContaining("evidence changed during export") });
+  });
+
   it("does not silently omit an unavailable saved company logo", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
@@ -157,3 +178,4 @@ describe("audit report endpoint pagination", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/storage/v1/object/"))).toBe(false);
   });
 });
+
