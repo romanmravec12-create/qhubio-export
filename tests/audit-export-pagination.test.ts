@@ -13,6 +13,54 @@ const request = { method: "POST", headers: { authorization: "Bearer synthetic-us
 
 describe("audit report endpoint pagination", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
+  it("does not fetch related data or render a foreign audit", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer synthetic-user-token");
+      if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
+      if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
+      if (url.includes("audit_v2_runs?")) {
+        expect(url).toContain("id=eq.foreign-audit");
+        expect(url).toContain("organization_id=eq.org-1");
+        return json([]); // The user's organization has no access to this audit.
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const res = response();
+    await handler({ ...request, body: { ...request.body, auditId: "foreign-audit" } } as never, res as never);
+    expect(res.statusCode).toBe(404);
+    expect(build).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not deliver a report if audit access disappears during export", async () => {
+    let auditReads = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
+      if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
+      if (url.includes("audit_v2_runs?")) return json(++auditReads === 1 ? [{ id: "audit-1", revision: 1, status: "review", document: { name: "Test" } }] : []);
+      if (url.includes("audit_v2_report_branding?")) return json([]);
+      return json([], "*/0");
+    }));
+    const res = response(); await handler(request as never, res as never);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ success: false });
+  });
+  it("passes source warnings from the issued audit snapshot through to the PDF renderer", async () => {
+    const snapshot = { name: "Issued QA audit", template: { sourceExtractionWarning: "pdf_word_and_spreadsheet_incomplete", chapters: [] } };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
+      if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
+      if (url.includes("audit_v2_runs?")) return json([{ id: "audit-1", revision: 1, status: "issued", document: { name: "Current" }, issued_snapshot: snapshot }]);
+      if (url.includes("audit_v2_report_branding?")) return json([]);
+      return json([], "*/0");
+    }));
+    const res = response(); await handler(request as never, res as never);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['X-Qhubio-Audit-Contract']).toBe('internal-audit-2026-11-14-v1');
+    expect(res.headers['Access-Control-Expose-Headers']).toContain('X-Qhubio-Audit-Contract');
+    expect(build).toHaveBeenCalledWith(expect.objectContaining({ audit: expect.objectContaining({ issued_snapshot: snapshot }) }));
+  });
   it("returns a clear error without a partial PDF for unsupported text", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
@@ -77,6 +125,27 @@ describe("audit report endpoint pagination", () => {
     await handler(request as never, res as never);
     expect(res.statusCode).toBe(409);
     expect(res.body).toMatchObject({ error: expect.stringContaining("changed during export") });
+  });
+
+  it.each(["added", "changed"])("does not deliver a report if evidence is %s during export", async (change) => {
+    let reads = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/auth/v1/user")) return json({ id: "user-1" });
+      if (url.includes("/rpc/get_user_organization_id")) return json("org-1");
+      if (url.includes("audit_v2_runs?")) return json([{ id: "audit-1", revision: 1, status: "review", document: { name: "Test" } }]);
+      if (url.includes("audit_v2_report_branding?")) return json([]);
+      if (url.includes("audit_v2_evidence?")) {
+        const first = [{ id: "e1", question_id: "q1", name: "file.pdf", source_media_type: "application/pdf" }];
+        if (++reads === 1) return json(first, "0-0/1");
+        return change === "added" ? json([...first, { id: "e2", question_id: "q1", name: "new.pdf", source_media_type: "application/pdf" }], "0-1/2")
+          : json([{ ...first[0], name: "changed.pdf" }], "0-0/1");
+      }
+      return json([], "*/0");
+    }));
+    const res = response();
+    await handler(request as never, res as never);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ error: expect.stringContaining("evidence changed during export") });
   });
 
   it("does not silently omit an unavailable saved company logo", async () => {
