@@ -10,7 +10,7 @@ const origin = "https://qhubio.com";
 const supabaseUrl = "https://faggswvpcctwlyuyllnc.supabase.co";
 const supabasePublishableKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhZ2dzd3ZwY2N0d2x5dXlsbG5jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0MTAzNDYsImV4cCI6MjA4Njk4NjM0Nn0.ughHxVaf-7YEFzi9Y6AqeAlXhHg1HDQmeeuzY4PMIUs";
 const json = (res: VercelResponse, status: number, error: string) => res.status(status).json({ success: false, error });
-const headers = (res: VercelResponse) => { res.setHeader("Access-Control-Allow-Origin", origin); res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS"); res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization"); };
+const headers = (res: VercelResponse) => { res.setHeader("Access-Control-Allow-Origin", origin); res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS"); res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization"); res.setHeader("Access-Control-Expose-Headers", "X-Qhubio-Audit-Contract"); };
 type TemporaryLogo = { mediaType?: string; byteSize?: number; width?: number; height?: number; base64?: string };
 
 function decodeTemporaryLogo(value: TemporaryLogo | undefined): { bytes: Uint8Array; format: "PNG" | "JPEG" } | null {
@@ -64,7 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // a report that omits an attachment added while the PDF was built.
     const finalEvidence = await allRows("audit_v2_evidence", "id,question_id,name,source_media_type", "id.asc");
     if (JSON.stringify(finalEvidence) !== JSON.stringify(evidence)) return json(res, 409, "The audit evidence changed during export. Please export again.");
-    const name = String(audit.document?.name ?? "audit").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase(); res.setHeader("Content-Type", "application/pdf"); res.setHeader("Content-Disposition", `attachment; filename=\"${name}-${format}.pdf\"`); res.setHeader("Content-Length", String(buffer.byteLength)); return res.status(200).send(Buffer.from(buffer));
+    const name = String(audit.document?.name ?? "audit").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase(); res.setHeader("Content-Type", "application/pdf"); res.setHeader("X-Qhubio-Audit-Contract", "internal-audit-2026-11-14-v1"); res.setHeader("Content-Disposition", `attachment; filename=\"${name}-${format}.pdf\"`); res.setHeader("Content-Length", String(buffer.byteLength)); return res.status(200).send(Buffer.from(buffer));
   } catch (error) { console.error("[audit-export] failed", error); return json(res, error instanceof AuditReportBrandingError || error instanceof AuditReportTextError ? 422 : 500, error instanceof AuditReportDataError || error instanceof AuditReportBrandingError || error instanceof AuditReportTextError ? error.message : "Audit report generation failed. Please try again."); }
 }
 

@@ -57,6 +57,8 @@ describe("audit report endpoint pagination", () => {
     }));
     const res = response(); await handler(request as never, res as never);
     expect(res.statusCode).toBe(200);
+    expect(res.headers['X-Qhubio-Audit-Contract']).toBe('internal-audit-2026-11-14-v1');
+    expect(res.headers['Access-Control-Expose-Headers']).toContain('X-Qhubio-Audit-Contract');
     expect(build).toHaveBeenCalledWith(expect.objectContaining({ audit: expect.objectContaining({ issued_snapshot: snapshot }) }));
   });
   it("returns a clear error without a partial PDF for unsupported text", async () => {
