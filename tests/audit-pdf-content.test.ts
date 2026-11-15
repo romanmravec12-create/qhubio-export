@@ -16,6 +16,26 @@ vi.mock("jspdf", () => ({ jsPDF: class {
 import { auditRadarChapterValue, AuditReportBrandingError, buildAuditPdf } from "../lib/auditPdf";
 
 describe("detailed audit report", () => {
+  it("prints the applicable source limitations in both report formats", () => {
+    const cases = [
+      ["word_elements_omitted", true, false, false],
+      ["spreadsheet_formula_results_unavailable", false, true, false],
+      ["word_and_spreadsheet_incomplete", true, true, false],
+      ["pdf_pages_without_text", false, false, true],
+      ["pdf_and_word_incomplete", true, false, true],
+      ["pdf_and_spreadsheet_incomplete", false, true, true],
+      ["pdf_word_and_spreadsheet_incomplete", true, true, true],
+    ] as const;
+    for (const [warning, word, spreadsheet, pdf] of cases) for (const mode of ["executive", "detailed"] as const) {
+      captured.length = 0;
+      const document = { name: "Audit", template: { sourceExtractionWarning: warning, chapters: [] }, responses: {}, findings: [] };
+      buildAuditPdf({ audit: { id: "audit", document, issued_snapshot: null }, evidence: [], links: [], history: [], mode });
+      const text = captured.join(" ");
+      expect(text.includes("Some Word document elements")).toBe(word);
+      expect(text.includes("Some spreadsheet formulas")).toBe(spreadsheet);
+      expect(text.includes("Some PDF pages had no extractable text")).toBe(pdf);
+    }
+  });
   it("leaves space between the bottom radar label and its explanatory caption", () => {
     capturedPositions.length = 0;
     const chapters = ["Planning", "Execution", "Monitoring", "Improvement"].map((name, i) => ({ name, questions: [{ id: `q${i}` }] }));
@@ -64,6 +84,16 @@ describe("detailed audit report", () => {
     for (const value of ["Second auditor", "Annual review", "Check log", "process.txt", "Source excerpt", "Observation", "Record 42", "Finding ID: f1", "Related question ID: q1", "2026-11-06", "Log missing", "Owner", "2026-11-09", "2026-11-27", "2027-02-04", "Hold material", "No owner", "Assign owner", "Assigned", "Verified", "Verifier", "2026-12-01"]) expect(text).toContain(value);
   });
 
+  it("preserves presentation and other extraction warnings in both report types", () => {
+    for (const mode of ["executive", "detailed"] as const) {
+      captured.length = 0;
+      const document = { name: "Audit", template: { chapters: [], presentationSlidesWithoutText: true, sourceExtractionWarning: "pdf_pages_without_text" }, responses: {}, findings: [] };
+      buildAuditPdf({ audit: { id: "audit", document, issued_snapshot: null }, evidence: [], links: [], history: [], mode });
+      expect(captured.join(" ")).toContain("Some presentation slides had no extractable text");
+      expect(captured.join(" ")).toContain("Some PDF pages had no extractable text");
+    }
+  });
+
   it("keeps issued findings distinct from complete current follow-up and includes all supplied history", () => {
     captured.length = 0;
     const snapshot = { name: "Audit", template: { chapters: [] }, responses: {}, findings: [{ id: "finding", title: "Finding", rootCause: "Original root cause", action: "Original action" }] };
@@ -104,4 +134,3 @@ describe("detailed audit report", () => {
     } finally { imageFailure.enabled = false; }
   });
 });
-

@@ -36,8 +36,35 @@ describe("real report logo rendering", () => {
     await task.destroy();
   });
 
+  it("preserves combined extraction warnings in actual executive and detailed PDFs", async () => {
+    const input = { ...document, template: { chapters: [], sourceExtractionWarning: "pdf_word_and_spreadsheet_incomplete", presentationSlidesWithoutText: true, visualSourceContentNotAnalyzed: true } };
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    for (const mode of ["executive", "detailed"] as const) {
+      const bytes = buildAuditPdf({ ...request, mode, audit: { id: "audit", document: input, issued_snapshot: null } });
+      const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+      const pdf = await task.promise; const pages: string[] = [];
+      for (let i = 1; i <= pdf.numPages; i++) pages.push((await (await pdf.getPage(i)).getTextContent()).items.map((item) => "str" in item ? item.str : "").join(" "));
+      const text = pages.join(" ");
+      for (const warning of ["Some Word document elements", "Some spreadsheet formulas", "Some PDF pages had no extractable text", "Some presentation slides had no extractable text", "Images, diagrams and other visual source content"]) expect(text).toContain(warning);
+      await task.destroy();
+    }
+  });
+
+  it("renders the immutable issued snapshot's warning instead of a later draft", async () => {
+    const issued = { ...document, template: { chapters: [], sourceExtractionWarning: "pdf_pages_without_text" } };
+    const current = { ...document, template: { chapters: [] } };
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    for (const mode of ["executive", "detailed"] as const) {
+      const bytes = buildAuditPdf({ ...request, mode, audit: { id: "audit", document: current, issued_snapshot: issued } });
+      const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+      const pdf = await task.promise; const pages: string[] = [];
+      for (let i = 1; i <= pdf.numPages; i++) pages.push((await (await pdf.getPage(i)).getTextContent()).items.map((item) => "str" in item ? item.str : "").join(" "));
+      expect(pages.join(" ")).toContain("Some PDF pages had no extractable text");
+      await task.destroy();
+    }
+  });
+
   it("rejects unsupported characters instead of silently corrupting the report", () => {
     expect(() => buildAuditPdf({ ...request, audit: { ...request.audit, document: { ...document, name: "Audit 😀" } } })).toThrow(AuditReportTextError);
   });
 });
-
