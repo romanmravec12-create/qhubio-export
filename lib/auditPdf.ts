@@ -5,12 +5,12 @@ export type AuditPdfMode = "executive" | "detailed";
 export class AuditReportBrandingError extends Error {}
 type AnyRecord = Record<string, any>;
 
-const safe = (value: unknown) => String(value ?? "").replace(/[\u0000-\u001f]/g, " ").trim();
+const safe = (value: unknown) => String(value ?? "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0009\u000b-\u001f]/g, " ").trim();
 const titleCase = (value: unknown) => safe(value).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 export const auditPdfGradeLabel = (grade: unknown) => ({ green: "Fully met", yellow: "Partially met", red: "Not met", na: "Not applicable", not_assessed: "Not assessed" } as Record<string, string>)[String(grade)] ?? (grade == null ? "Unanswered" : typeof grade === "number" ? `${grade} / 10` : titleCase(grade));
 const score = (grade: unknown) => typeof grade === "number" ? grade : grade === "green" ? 10 : grade === "yellow" ? 6 : grade === "red" ? 0 : null;
 
-export function buildAuditPdf({ audit, evidence, links, history, approvals = [], branding, mode }: { audit: AnyRecord; evidence: AnyRecord[]; links: AnyRecord[]; history: AnyRecord[]; approvals?: AnyRecord[]; branding?: { bytes: Uint8Array; format: "PNG" | "JPEG" } | null; mode: AuditPdfMode }) {
+export function buildAuditPdf({ audit, evidence, links, history, approvals = [], approvalRequests = [], branding, mode }: { audit: AnyRecord; evidence: AnyRecord[]; links: AnyRecord[]; history: AnyRecord[]; approvals?: AnyRecord[]; approvalRequests?: AnyRecord[]; branding?: { bytes: Uint8Array; format: "PNG" | "JPEG" } | null; mode: AuditPdfMode }) {
   const pdf = new jsPDF({ unit: "mm", format: "a4", compress: true });
   const reportText = new AuditReportText(pdf);
   const document = audit.issued_snapshot ?? audit.document;
@@ -21,10 +21,22 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
   const page = () => { pdf.addPage(); y = 20; watermark(); };
   const write = (value: unknown, size = 9, bold = false, indent = 0) => {
     const text = safe(value) || "—";
-    for (const line of reportText.lines(text, 174 - indent, size, bold)) { if (y > 276) page(); reportText.draw(line, 18 + indent, y, size, bold); y += size * 0.48 + 1.8; }
+    for (const paragraph of text.split("\n")) {
+      const lines = paragraph ? reportText.lines(paragraph, 174 - indent, size, bold) : [""];
+      for (const line of lines) {
+        if (y > 276) page();
+        if (line) reportText.draw(line, 18 + indent, y, size, bold);
+        y += size * 0.48 + 1.8;
+      }
+    }
   };
   const heading = (value: string, level = 14) => { if (y > 260) page(); y += 3; pdf.setDrawColor(32, 66, 104); pdf.setLineWidth(.45); pdf.line(18, y, 192, y); y += 6; write(value, level, true); };
   const key = (label: string, value: unknown) => write(`${label}: ${safe(value) || "—"}`, 9, false);
+  // Only label a revision as signed when the issuance event and request agree.
+  const issuedEvents = approvals.filter((event) => safe(event.event).toLowerCase() === "issued" && event.approval_request_id && event.document_hash);
+  const issuedRequests = approvalRequests.filter((request) => ["issued", "closed"].includes(request.status) && request.issued_at && Number.isFinite(Date.parse(request.issued_at)) && Number.isSafeInteger(request.requested_revision) && request.requested_revision > 0 && issuedEvents.some((event) => event.approval_request_id === request.id && event.document_hash === request.document_hash && event.actor_id === request.issued_by && Date.parse(event.created_at) === Date.parse(request.issued_at)));
+  const issuance = !draft && issuedRequests.length === 1 ? issuedRequests[0] : null;
+  const blockHeight = (value: unknown, size: number) => (safe(value) || "—").split("\n").reduce((count, paragraph) => count + (paragraph ? reportText.lines(paragraph, 174, size, false).length : 1), 0) * (size * 0.48 + 1.8);
   const findingDetails = (finding: AnyRecord) => {
     write(`${titleCase(finding.severity)} ${titleCase(finding.type)} · ${finding.title}`, 10, true);
     key("Finding ID", finding.id); key("Related question ID", finding.questionId); key("Finding date", finding.createdOn);
@@ -43,21 +55,30 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
       const scale = Math.min(44 / width, 18 / height);
       const logoWidth = width * scale, logoHeight = height * scale;
       pdf.addImage(branding.bytes, branding.format, 146 + (44 - logoWidth) / 2, 18 + (18 - logoHeight) / 2, logoWidth, logoHeight, undefined, "FAST");
+      // Reserve the complete logo area before drawing any report text. Long
+      // names can otherwise extend underneath a logo positioned on the right.
+      y = 42;
     } catch { throw new AuditReportBrandingError("The selected company logo could not be rendered. Choose another logo and export again."); }
   }
   write(mode === "executive" ? "Audit Executive Summary" : "Detailed Audit Report", 19, true);
   if (draft) { pdf.setTextColor(160, 35, 35); write("DRAFT — NOT ISSUED", 11, true); pdf.setTextColor(20, 25, 30); }
   write(document.name, 15, true);
   key("Audit reference", audit.id); key("Template", `${document.template?.name ?? "Audit template"} · v${document.template?.version ?? "—"}`); key("Audited organisation", document.organization); key("Site", document.site); key("Audit date", document.plannedOn); key("Lead auditor", document.auditor); key("Co-auditor", document.coAuditor); key("Scope", document.scope); key("Risk / reason for audit", document.trigger); key("Sample / project", document.sample);
-  if (document.template?.sourceExtractionWarning === "word_elements_omitted") key("Source review note", "Some Word document elements were not interpreted during questionnaire preparation. Review the original source for coverage.");
+  if (["word_elements_omitted", "word_and_spreadsheet_incomplete", "pdf_and_word_incomplete", "pdf_word_and_spreadsheet_incomplete"].includes(document.template?.sourceExtractionWarning)) key("Source review note", "Some Word document elements were not interpreted during questionnaire preparation. Review the original source for coverage.");
+  if (["spreadsheet_formula_results_unavailable", "word_and_spreadsheet_incomplete", "pdf_and_spreadsheet_incomplete", "pdf_word_and_spreadsheet_incomplete"].includes(document.template?.sourceExtractionWarning)) key("Source review note", "Some spreadsheet formulas had missing or error results during questionnaire preparation. Review the original workbook for coverage.");
+  if (["pdf_pages_without_text", "pdf_and_word_incomplete", "pdf_and_spreadsheet_incomplete", "pdf_word_and_spreadsheet_incomplete"].includes(document.template?.sourceExtractionWarning)) key("Source review note", "Some PDF pages had no extractable text. They may be blank or contain scanned content. Review the original PDF for coverage.");
+  if (document.template?.presentationSlidesWithoutText === true) key("Source review note", "Some presentation slides had no extractable text. They may be blank or contain graphical content. Review the original presentation for coverage.");
+  if (document.template?.visualSourceContentNotAnalyzed === true) key("Source review note", "Images, diagrams and other visual source content may not have been analyzed. Review the originals for coverage.");
   heading("Assessment result");
   key("Completion", `${result.coverage ?? 0}%`); key("Result", result.result); key("Score", result.score == null ? "Not calculated" : `${Number(result.score).toFixed(1)}% · band ${result.band ?? "—"}`); key("Conclusion", document.conclusion); if (document.template?.family === "supplier") key("Supplier / release decision", titleCase(document.releaseDecision));
   if (mode === "executive") {
+    if (!draft && document.template?.family === "internal") { heading("Issuance"); key("Signed assessment revision", issuance?.requested_revision ?? "Unavailable"); key("Issued at (UTC)", issuance?.issued_at ?? "Unavailable"); }
     const chapters = document.template?.chapters ?? [];
     // Keep a typical chart, explanation and legend together when possible.
-    if (chapters.length > 0 && chapters.length <= 8 && y + 113 + chapters.length * 8 > 276) page();
+    if (chapters.length >= 3 && chapters.length <= 8 && y + 113 + chapters.length * 8 > 276) page();
     heading("Chapter performance");
-    if (chapters.length > 0 && chapters.length <= 8) { drawRadar(pdf, document, 105, y + 35, 30); y += 84; }
+    if (chapters.length >= 3 && chapters.length <= 8) { drawRadar(pdf, document, 105, y + 35, 30); y += 84; }
+    else if (chapters.length > 0 && chapters.length < 3) write("Chapter results are listed below; a radar chart requires at least three chapters.", 8);
     else if (chapters.length > 8) write("Chapter results are listed below; a chart is omitted to keep the report readable.", 8);
     if (chapters.length) {
       write("Chapter values use the unweighted average of assessed answers: fully met = 10, partially met = 6, not met = 0; numeric grades use their value out of 10. Not applicable and unanswered questions are excluded. Chapters without assessed answers have no value or plotted point.", 8);
@@ -85,10 +106,11 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
       }
     }
     heading(audit.issued_snapshot ? "Findings at issue" : "Draft findings");
+    if (!(document.findings ?? []).length) write("No findings recorded.");
     for (const finding of document.findings ?? []) findingDetails(finding);
-    if (audit.issued_snapshot) { heading("Current follow-up after issue"); for (const finding of audit.document?.findings ?? []) findingDetails(finding); }
+    if (audit.issued_snapshot) { heading("Current follow-up after issue"); if (!(audit.document?.findings ?? []).length) write("No current findings recorded."); for (const finding of audit.document?.findings ?? []) findingDetails(finding); }
     heading("CAPA and audit history"); if (links.length) for (const link of links) { write(`CAPA ID: ${safe(link.capa_id) || "—"}`, 9, true); key("Related finding ID", link.finding_id); key("Linked at", link.linked_at); } else write("No CAPA links recorded."); if (history.length) { y += 2; for (const event of history) write(`${event.created_at || ""} · ${titleCase(event.event)} · revision ${event.revision ?? "—"} · actor ID ${event.actor_id || "—"}`, 8); }
-    heading("Controlled electronic sign-off"); if (approvals.length) for (const approval of approvals) { write(`${approval.created_at || ""} · ${titleCase(approval.event)} · ${approval.meaning || "Controlled sign-off event"}`, 8); key("Actor ID", approval.actor_id); key("Document SHA-256", approval.document_hash); } else write("No controlled electronic sign-off has been recorded for this audit.");
+    heading("Controlled electronic sign-off"); if (approvals.length) for (const approval of approvals) { const eventLine = `${approval.created_at || ""} · ${titleCase(approval.event)} · ${approval.meaning || "Controlled sign-off event"}`; const height = blockHeight(eventLine, 8) + blockHeight(`Actor ID: ${safe(approval.actor_id) || "—"}`, 9) + blockHeight(`Document SHA-256: ${safe(approval.document_hash) || "—"}`, 9); if (height <= 256 && y + height > 276) page(); write(eventLine, 8); key("Actor ID", approval.actor_id); key("Document SHA-256", approval.document_hash); } else write("No controlled electronic sign-off has been recorded for this audit.");
   }
   const pages = pdf.getNumberOfPages(); for (let i = 1; i <= pages; i++) { pdf.setPage(i); pdf.setDrawColor(190); pdf.line(18, 286, 192, 286); pdf.setFont("AuditReport", "normal"); pdf.setFontSize(8); pdf.setTextColor(80); pdf.text(`Qhubio audit record · ${audit.id} · ${i} / ${pages}`, 18, 291); }
   return pdf.output("arraybuffer");
@@ -129,4 +151,5 @@ function drawRadar(pdf: jsPDF, document: AnyRecord, cx: number, cy: number, radi
   pdf.setDrawColor(130); for (let i = 0; i < count; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / count; pdf.line(cx, cy, cx + Math.cos(a) * radius, cy + Math.sin(a) * radius); const label = i < chapters.length ? String(i + 1) : ""; pdf.setFontSize(7); pdf.text(label, cx + Math.cos(a) * (radius + 7), cy + Math.sin(a) * (radius + 7), { align: "center" }); }
   pdf.setDrawColor(23, 91, 151); pdf.setFillColor(82, 147, 204); const points = chapters.map((chapter: AnyRecord, i: number) => { const value = auditRadarChapterValue(chapter, document.responses ?? {}); if (value === null) return null; const a = -Math.PI / 2 + i * 2 * Math.PI / count, r = radius * value; return [cx + Math.cos(a) * r, cy + Math.sin(a) * r] as [number, number]; }); for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; if (!a) continue; if (b && points.length > 1) pdf.line(a[0], a[1], b[0], b[1]); pdf.circle(a[0], a[1], 1.2, "F"); }
 }
+
 
