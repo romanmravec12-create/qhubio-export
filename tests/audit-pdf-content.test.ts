@@ -41,7 +41,7 @@ describe("detailed audit report", () => {
     expect(auditRadarChapterValue(chapter, { a: { grade: "red" }, b: { grade: "na" } })).toBe(0);
     expect(auditRadarChapterValue(chapter, { a: { grade: "green" }, b: { grade: "yellow" }, c: { grade: "na" } })).toBe(0.8);
     captured.length = 0; capturedPoints.length = 0;
-    const document = { name: "Audit", template: { chapters: [chapter] }, responses: {}, findings: [] };
+    const document = { name: "Audit", template: { chapters: [chapter, { name: "Other", questions: [{ id: "other" }] }, { name: "Third", questions: [{ id: "third" }] }] }, responses: {}, findings: [] };
     buildAuditPdf({ audit: { id: "audit", document, issued_snapshot: null }, evidence: [], links: [], history: [], mode: "executive" });
     expect(capturedPoints).toHaveLength(0);
     expect(captured.join(" ")).toContain("Chapters without assessed answers have no value or plotted point.");
@@ -104,4 +104,5 @@ describe("detailed audit report", () => {
     } finally { imageFailure.enabled = false; }
   });
 });
+
 
