@@ -72,7 +72,7 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
   heading("Assessment result");
   key("Completion", `${result.coverage ?? 0}%`); key("Result", result.result); key("Score", result.score == null ? "Not calculated" : `${Number(result.score).toFixed(1)}% · band ${result.band ?? "—"}`); key("Conclusion", document.conclusion); if (document.template?.family === "supplier") key("Supplier / release decision", titleCase(document.releaseDecision));
   if (mode === "executive") {
-    if (!draft && document.template?.family === "internal") { heading("Issuance"); key("Signed assessment revision", issuance?.requested_revision ?? "Unavailable"); key("Issued at (UTC)", issuance?.issued_at ?? "Unavailable"); }
+    if (!draft && document.template?.family === "internal") { heading("Issuance · Issued assessment snapshot"); key("Signed assessment revision", issuance?.requested_revision ?? "Unavailable"); key("Issued at (UTC)", issuance?.issued_at ?? "Unavailable"); }
     const chapters = document.template?.chapters ?? [];
     // Keep a typical chart, explanation and legend together when possible.
     if (chapters.length >= 3 && chapters.length <= 8 && y + 113 + chapters.length * 8 > 276) page();
@@ -88,7 +88,7 @@ export function buildAuditPdf({ audit, evidence, links, history, approvals = [],
     const open = (document.findings ?? []).filter((f: AnyRecord) => f.status !== "closed");
     if (!open.length) write("No open findings recorded.");
     for (const finding of open.slice(0, 8)) { write(`${titleCase(finding.severity)} ${titleCase(finding.type)} · ${finding.title}`, 10, true); key("Owner / due", `${finding.owner || "—"} / ${finding.due || "—"}`); if (finding.severity === "major") key("Major finding deadlines", `Containment ${finding.containmentDue || "—"}; action plan ${finding.planDue || "—"}`); }
-    heading("Management attention"); key("Open findings", open.length); key("Overdue findings", open.filter((f: AnyRecord) => f.due && f.due < new Date().toISOString().slice(0, 10)).length); key("CAPA links", links.length); key("Issued status", audit.issued_snapshot ? "Issued assessment snapshot" : "Working audit record");
+    heading("Management attention"); key("Open findings", open.length); key("Overdue findings", open.filter((f: AnyRecord) => f.due && f.due < new Date().toISOString().slice(0, 10)).length); key("CAPA links", links.length); if (document.template?.family !== "internal") key("Issued status", audit.issued_snapshot ? "Issued assessment snapshot" : "Working audit record");
   } else {
     heading("Scoring policy"); write("Scores and responses are reproduced from the active audit template. Not applicable responses are excluded from the calculated score. The audit conclusion remains an auditor judgement, not a certificate or automatic release authorization.");
     let questionNumber = 0;
